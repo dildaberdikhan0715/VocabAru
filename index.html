@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VocabAru4 CLOUD</title>
+  <link rel="stylesheet" href="styles.css?v=VocabAru4-CLOUD-FINAL" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">VocabAru</div>
+      <nav>
+        <button data-view="dashboard" class="nav active">Dashboard</button>
+        <button data-view="learn" class="nav">Learn</button>
+        <button data-view="review" class="nav">Review</button>
+        <button data-view="books" class="nav">Word Books</button>
+        <button data-view="vocabulary" class="nav">Vocabulary</button>
+        <button data-view="settings" class="nav">Settings</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="page-title">Dashboard</h1>
+          <p id="page-subtitle">English vocabulary with Russian explanations</p>
+        </div>
+        <button id="account-btn" type="button" class="ghost">Log in</button>
+      <button id="reset-demo" class="ghost">Reset demo</button>
+      </header>
+      <section id="view"></section>
+    </main>
+  </div>
+
+  <dialog id="import-dialog">
+    <form method="dialog" class="dialog-card">
+      <h2>Import word book</h2>
+      <p>Paste one word per line. You can optionally use: <code>word | Russian translation</code>.</p>
+      <input id="book-title" placeholder="Word book title" />
+      <textarea id="book-data" rows="12" placeholder="achieve | достигать\nmaintain | поддерживать\nsignificant | значительный"></textarea>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost">Cancel</button>
+        <button id="confirm-import" value="default" class="primary">Create book</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="ielts538.js"></script>
+  <script src="ielts197.js"></script>
+  <script src="corpus.js"></script>
+  <script src="corpus_ru_info.js"></script>
+  <script src="ielts_core_vocab.js"></script>
+  <script src="ielts_core_details.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+
+  <script src="app.js?v=VocabAru4-CLOUD-FINAL"></script>
+
+<script>
+(function(){
+  document.addEventListener('click', function(e){
+    const btn = e.target && e.target.closest ? e.target.closest('button, a') : null;
+    if(!btn) return;
+    const label=(btn.textContent||'').trim().toLowerCase();
+    if(label !== 'reset demo') return;
+    if(btn.dataset.resetPasswordOk === '1'){
+      btn.dataset.resetPasswordOk = '';
+      return;
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const pw=window.prompt('Enter password to reset:');
+    if(pw===null) return;
+    if(pw!=='aruzhan'){
+      window.alert('Incorrect password.');
+      return;
+    }
+    btn.dataset.resetPasswordOk='1';
+    btn.click();
+  }, true);
+})();
+</script>
+
+
+<dialog id="account-dialog" class="account-dialog">
+  <div class="account-card">
+    <div class="account-head">
+      <div>
+        <h2 id="account-title">VocabAru Account</h2><div style="font-weight:800;color:#b00020;font-size:13px">VocabAru4 · CLOUD SETUP VERSION</div>
+        <p class="muted" id="account-subtitle">Sign in to sync your learning progress across devices.</p>
+      </div>
+      <button type="button" class="ghost" id="account-close">✕</button>
+    </div>
+
+    <div id="account-config-warning" class="account-warning" hidden>
+      <strong>Cloud settings</strong>
+      <p class="muted" style="margin:8px 0 12px">Paste your Supabase Publishable key once. VocabAru will remember it on this device.</p>
+
+      <label>Supabase Project URL</label>
+      <input id="supabase-url-input" type="text"
+        value="https://lomjjuiddbwwsygnsapx.supabase.co"
+        autocomplete="off">
+
+      <label>Supabase Publishable key</label>
+      <input id="supabase-key-input" type="password"
+        placeholder="sb_publishable_..."
+        autocomplete="off">
+
+      <div class="account-actions">
+        <button type="button" class="primary" id="save-supabase-config">Save connection</button>
+      </div>
+      <p class="muted" id="supabase-config-message"></p>
+    </div>
+
+    <div id="account-auth-form">
+      <label>Email</label>
+      <input id="account-email" type="email" autocomplete="email" placeholder="you@example.com">
+
+      <label>Password</label>
+      <input id="account-password" type="password" autocomplete="current-password" placeholder="At least 6 characters">
+
+      <div class="account-actions">
+        <button type="button" class="primary" id="account-login">Log in</button>
+        <button type="button" class="ghost" id="account-signup">Create account</button>
+        <button type="button" class="ghost" id="account-cloud-settings">Cloud settings</button>
+      </div>
+
+      <p class="muted account-message" id="account-message"></p>
+      <div id="account-password-actions" class="account-confirm-actions" hidden>
+        <button type="button" class="ghost" id="account-forgot-password">Forgot / change password</button>
+        <span class="muted" id="account-password-status"></span>
+      </div>
+      <div id="account-reset-form" class="account-warning" hidden>
+        <strong>Set a new password</strong>
+        <label>New password</label>
+        <input id="account-new-password" type="password" autocomplete="new-password" placeholder="At least 6 characters">
+        <div class="account-actions">
+          <button type="button" class="primary" id="account-save-new-password">Save new password</button>
+        </div>
+      </div>
+      <div id="account-confirm-actions" class="account-confirm-actions" hidden>
+        <button type="button" class="ghost" id="account-resend-confirmation">Resend confirmation email</button>
+        <span class="muted" id="account-resend-status"></span>
+      </div>
+    </div>
+
+    <div id="account-signed-in" hidden>
+      <div class="card account-status-card">
+        <div class="muted">Signed in as</div>
+        <strong id="account-user-email"></strong>
+        <div class="muted" style="margin-top:8px">Your vocabulary progress is synced to the cloud.</div>
+      </div>
+      <div class="account-actions">
+        <button type="button" class="primary" id="account-sync-now">Sync now</button>
+        <button type="button" class="ghost" id="account-logout">Log out</button>
+      </div>
+      <p class="muted account-message" id="account-sync-message"></p>
+    </div>
+  </div>
+</dialog>
+
+</body>
+</html>
