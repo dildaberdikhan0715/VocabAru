@@ -1805,12 +1805,19 @@ function renderDashboard(){
     <div class="section-title"><h2>Continue</h2><button class="primary" id="start-review">Review now</button></div>
     <div class="grid books">${db.books.map(bookCard).join('')}</div>
     <div class="section-title"><h2>How review works</h2></div>
-    <div class="notice">Words are scheduled individually. Progress is shared across word books, so a word learned in IELTS 538 will not restart from zero in another book.</div>`;
+    <div class="notice">Words are scheduled individually. Curated word books share progress across duplicate words. My Words is personal: anything you add there stays in My Words.</div>`;
   document.querySelector('#start-review').onclick=()=>setView(due?'review':'learn');
   document.querySelectorAll('.open-book').forEach(btn=>btn.onclick=()=>openBookSafe(btn.dataset.id));
 }
 
 function bookCard(b){
+  if(b.id==='mywords'){
+    const ids=[...new Set(b.wordIds||[])].filter(id=>db.words[id]);
+    const learned=ids.filter(id=>getState(id).status!=='new').length;
+    const due=ids.filter(id=>{const s=getState(id);return s.status!=='new' && s.due<=Date.now();}).length;
+    const pct=ids.length?Math.round(learned/ids.length*100):0;
+    return `<div class="card book-card"><span class="pill">${b.category}</span><h3>${escapeHtml(b.title)}</h3><div class="muted">${learned} / ${ids.length} words learned · ${due} due</div><div class="progress"><span style="width:${pct}%"></span></div><button class="ghost open-book" data-id="${b.id}">Open</button></div>`;
+  }
   if(b.corpusMode){
     const cs=corpusSummary();
     const pct=cs.total?Math.round(cs.attempted/cs.total*100):0;
@@ -2608,7 +2615,7 @@ function renderMyWords(){
   title.textContent='My Words';
   subtitle.textContent='';
   const b=db.books.find(x=>x.id==='mywords');
-  const ids=uniqueWordIdsForBook(b);
+  const ids=[...new Set(b.wordIds||[])].filter(id=>db.words[id]);
   const dueIds=ids.filter(id=>getState(id).status!=='new' && getState(id).due<=Date.now());
   const learned=ids.filter(id=>getState(id).status!=='new').length;
 
@@ -2618,7 +2625,7 @@ function renderMyWords(){
   <div class="card">
     <h2>Search and add a word</h2>
     <div class="myword-search-row">
-      <input id="myword-search" class="spelling-input" placeholder="Type an English word" autocomplete="off" autocapitalize="none">
+      <input id="myword-search" name="vocab_search" type="search" role="searchbox" class="spelling-input" placeholder="Type an English word" autocomplete="off" autocapitalize="none" spellcheck="false" data-1p-ignore data-lpignore="true">
       <button type="button" class="primary" id="myword-search-btn">Search</button>
     </div>
     <div id="myword-search-result"></div>
@@ -2889,24 +2896,47 @@ async function searchMyWord(){
 
 function addMyWord(word,phonetic,pos){
   const b=ensureMyWordsBook();
-  let found=findWordByEnglish(word);
-  let id;
-  if(found){
-    id=found.id;
-  }else{
+  const key=normalizeSpelling(word||'');
+
+  // My Words is a personal book: a word is allowed here even if it already
+  // appears in IELTS 538 / 197 / Core Vocabulary. Re-adding the same My Words
+  // entry updates it instead of creating another duplicate.
+  let id=(b.wordIds||[]).find(existingId=>{
+    const existing=db.words[existingId];
+    return existing && normalizeSpelling(existing.word||'')===key;
+  });
+
+  if(!id){
     id='my_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-    db.words[id]={word:word,phonetic:phonetic||'',pos:pos||'',level:'My Words'};
+    db.words[id]={
+      word:word,
+      phonetic:phonetic||'',
+      pos:pos||'',
+      level:'My Words'
+    };
+    b.wordIds.push(id);
   }
+
   const w=db.words[id];
+  w.word=word;
+  w.phonetic=phonetic||w.phonetic||'';
+  w.pos=pos||w.pos||'';
   w.translation=(document.getElementById('myword-ru').value||'').trim();
   w.definition=(document.getElementById('myword-note').value||'').trim();
   w.example=(document.getElementById('myword-example').value||'').trim();
   w.exampleRu=(document.getElementById('myword-example-ru').value||'').trim();
   w.synonyms=(document.getElementById('myword-synonyms').value||'').trim();
-  if(!b.wordIds.includes(id)) b.wordIds.push(id);
+
   getState(id);
   save();
-  renderMyWords();
+
+  // Immediate visual confirmation, then return to the real My Words list.
+  const addBtn=document.getElementById('add-myword');
+  if(addBtn){
+    addBtn.disabled=true;
+    addBtn.textContent='Added ✓';
+  }
+  setTimeout(()=>renderMyWords(),250);
 }
 
 window.renderMyWords=renderMyWords;
