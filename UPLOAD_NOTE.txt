@@ -1,4 +1,4 @@
-VocabAru8 cross-browser fix.
-Upload all files to the ROOT of GitHub VocabAru and overwrite existing files.
-supabase-config.js is intentionally excluded so the live Supabase publishable key is preserved.
-Fixes: blank Dashboard on new browser/iPad, stale cache, old cloud-state schema, plus prior review/writing/voice fixes.
+VocabAru9 Safari compatibility fix.
+Upload all files to the ROOT of the GitHub VocabAru repository and overwrite existing files.
+supabase-config.js is intentionally excluded so your working Supabase URL/key remains untouched.
+Main fix: older Safari without structuredClone no longer crashes before Dashboard rendering.

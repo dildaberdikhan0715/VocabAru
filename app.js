@@ -1,4 +1,13 @@
-const VOCABARU_SYNC_BUILD='2026-08-24-cross-browser-v8';
+const VOCABARU_SYNC_BUILD='2026-08-24-safari-v9';
+
+window.addEventListener('error',function(e){
+  try{
+    const view=document.getElementById('view');
+    if(view && !view.innerHTML.trim()){
+      view.innerHTML='<div class="card"><h2>VocabAru could not finish loading.</h2><p class="muted">Please refresh this page. If it still does not load, update Safari or use another browser.</p></div>';
+    }
+  }catch(_e){}
+});
 const STORAGE_KEY = 'vocabflow_v4';
 const DAY = 86400000;
 
@@ -771,8 +780,17 @@ if (Array.isArray(window.IELTS538_DATA) && window.IELTS538_DATA.length === 538) 
   seed.books.push({id:'ieltscore',title:'IELTS Core Vocabulary',category:'IELTS',wordIds:[...new Set(ids)],targetCount:data.length,coreVocabulary:true});
 })();
 
+function vocabAruDeepClone(value){
+  // structuredClone is unavailable in some Safari versions (especially older macOS/iPadOS).
+  // JSON fallback is sufficient for VocabAru state because it contains plain objects/arrays/numbers/strings.
+  if(typeof window!=='undefined' && typeof window.structuredClone==='function'){
+    try{return window.structuredClone(value);}catch(e){}
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
 function normalizeVocabAruDb(raw){
-  const base=structuredClone(seed);
+  const base=vocabAruDeepClone(seed);
   if(!raw || typeof raw!=='object') return base;
 
   // Keep user progress, settings, logs and corpus progress.
@@ -814,7 +832,7 @@ function load(){
     const raw=JSON.parse(localStorage.getItem(STORAGE_KEY));
     return normalizeVocabAruDb(raw);
   } catch {
-    return structuredClone(seed);
+    return vocabAruDeepClone(seed);
   }
 }
 let db = load();
