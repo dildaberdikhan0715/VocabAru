@@ -2210,12 +2210,22 @@ function render538SpellingDiff(userText, correctText){
 }
 
 window.checkCurrent538Spelling=function(){
-  if(!current538SpellingId || !current538SpellingWord) return;
   const input=document.getElementById('538-spelling');
-  if(!input) return;
+  const checkBtn=document.getElementById('check-538-spelling');
+
+  if(!current538SpellingId || !current538SpellingWord || !input){
+    if(checkBtn) checkBtn.disabled=false;
+    if(input) input.disabled=false;
+    return;
+  }
 
   const raw=(input.value||'').trim();
-  if(!raw){ input.focus(); return; }
+  if(!raw){
+    if(checkBtn) checkBtn.disabled=false;
+    input.disabled=false;
+    input.focus();
+    return;
+  }
 
   last538SpellingAttempt=raw;
   const correct=normalizeSpelling(raw)===normalizeSpelling(current538SpellingWord.word);
@@ -2429,24 +2439,56 @@ function show538SpellingTest(id,w){
 
     <button type="button"
       class="word-audio-btn spell-word-audio"
-      id="spell-audio"
-      onclick="playCurrent538Spelling()">🔊 Play word</button>
+      id="spell-audio">🔊 Play word</button>
 
     <input class="spelling-input" id="538-spelling"
       autocomplete="off" autocapitalize="none" spellcheck="false"
-      placeholder="Type the English word"
-      onkeydown="if(event.key==='Enter'){event.preventDefault();checkCurrent538Spelling();}">
+      placeholder="Type the English word">
 
     <div style="margin-top:16px">
       <button class="primary"
         id="check-538-spelling"
-        type="button"
-        onclick="checkCurrent538Spelling()">Check spelling</button>
+        type="button">Check spelling</button>
     </div>`;
 
   bind538BackButton();
+
   const input=document.getElementById('538-spelling');
-  if(input) setTimeout(()=>input.focus(),0);
+  const checkBtn=document.getElementById('check-538-spelling');
+  const audioBtn=document.getElementById('spell-audio');
+
+  if(audioBtn){
+    audioBtn.onclick=()=>{
+      if(current538SpellingWord) speakCorpus(current538SpellingWord.word);
+    };
+  }
+
+  const doCheck=()=>{
+    if(checkBtn && checkBtn.disabled) return;
+    const raw=(input?.value||'').trim();
+    if(!raw){
+      if(input) input.focus();
+      return;
+    }
+
+    // Prevent accidental double submission.
+    if(checkBtn) checkBtn.disabled=true;
+    if(input) input.disabled=true;
+
+    window.checkCurrent538Spelling();
+  };
+
+  if(checkBtn) checkBtn.onclick=doCheck;
+
+  if(input){
+    input.addEventListener('keydown',e=>{
+      if(e.key==='Enter'){
+        e.preventDefault();
+        doCheck();
+      }
+    });
+    setTimeout(()=>input.focus(),0);
+  }
 }
 
 function show538Result(id,w,grade,message){
@@ -2685,11 +2727,11 @@ function renderMyWords(bookId='mywords'){
   document.getElementById('mywords-study').onclick=()=>{
     const newIds=ids.filter(id=>getState(id).status==='new').slice(0,db.settings.newPerDay);
     if(!newIds.length){alert(`No new words are available in ${pageName} right now.`);return;}
-    start538Recall(newIds);
+    start538Recall(newIds,bookId);
   };
   document.getElementById('mywords-review').onclick=()=>{
     if(!dueIds.length){alert(`No words in ${pageName} are due right now.`);return;}
-    start538Recall(dueIds);
+    start538Recall(dueIds,bookId);
   };
 }
 
