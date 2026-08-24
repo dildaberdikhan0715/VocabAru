@@ -1540,6 +1540,7 @@ document.querySelector('#reset-demo').onclick=()=>{ if(confirm('Reset all learni
 
 function render(){
   ensureMyWordsBook();
+  ensureWritingWordsBook();
   const map={dashboard:['Dashboard','English vocabulary with Russian explanations'],learn:['Learn','Study new words'],review:['Review','Review words that are due'],books:['Word Books','Manage IELTS, TOEFL, SAT and custom books'],vocabulary:['Vocabulary','All words and learning status'],settings:['Settings','Daily learning preferences']};
   [title.textContent,subtitle.textContent]=map[currentView];
   ({dashboard:renderDashboard,learn:renderLearn,review:renderReview,books:renderBooks,vocabulary:renderVocabulary,settings:renderSettings}[currentView])();
@@ -1805,13 +1806,13 @@ function renderDashboard(){
     <div class="section-title"><h2>Continue</h2><button class="primary" id="start-review">Review now</button></div>
     <div class="grid books">${db.books.map(bookCard).join('')}</div>
     <div class="section-title"><h2>How review works</h2></div>
-    <div class="notice">Words are scheduled individually. Curated word books share progress across duplicate words. My Words is personal: anything you add there stays in My Words.</div>`;
+    <div class="notice">Words are scheduled individually. Curated word books share progress across duplicate words. My Words and My Words for Writing are separate personal books: anything you add stays in the book you chose.</div>`;
   document.querySelector('#start-review').onclick=()=>setView(due?'review':'learn');
   document.querySelectorAll('.open-book').forEach(btn=>btn.onclick=()=>openBookSafe(btn.dataset.id));
 }
 
 function bookCard(b){
-  if(b.id==='mywords'){
+  if(b.id==='mywords' || b.id==='mywords-writing'){
     const ids=[...new Set(b.wordIds||[])].filter(id=>db.words[id]);
     const learned=ids.filter(id=>getState(id).status!=='new').length;
     const due=ids.filter(id=>{const s=getState(id);return s.status!=='new' && s.due<=Date.now();}).length;
@@ -1833,7 +1834,8 @@ function bookCard(b){
 
 
 function openBookSafe(bookId){
-  if(bookId==='mywords'){ renderMyWords(); return; }
+  if(bookId==='mywords'){ renderMyWords('mywords'); return; }
+  if(bookId==='mywords-writing'){ renderMyWords('mywords-writing'); return; }
   if(bookId==='b197'){
     render197Book();
     return;
@@ -1899,7 +1901,8 @@ window.startCurrentBookNewWords=startCurrentBookNewWords;
 window.reviewCurrentBookDue=reviewCurrentBookDue;
 
 function renderBook(bookId){
-  if(bookId==='mywords'){ renderMyWords(); return; }
+  if(bookId==='mywords'){ renderMyWords('mywords'); return; }
+  if(bookId==='mywords-writing'){ renderMyWords('mywords-writing'); return; }
   if(bookId==='b197'){ render197Book(); return; }
   const b=db.books.find(x=>x.id===bookId);
   if(b.corpusMode){ renderCorpusHome(); return; }
@@ -2604,17 +2607,40 @@ function ensureMyWordsBook(){
   return b;
 }
 
+function ensureWritingWordsBook(){
+  let b=db.books.find(x=>x.id==='mywords-writing');
+  if(!b){
+    b={id:'mywords-writing',title:'My Words for Writing',category:'Personal',wordIds:[]};
+    db.books.push(b);
+    save();
+  }
+  return b;
+}
+
+let activePersonalBookId='mywords';
+
+function getPersonalBook(bookId=activePersonalBookId){
+  return bookId==='mywords-writing' ? ensureWritingWordsBook() : ensureMyWordsBook();
+}
+
+function personalBookTitle(bookId=activePersonalBookId){
+  return bookId==='mywords-writing' ? 'My Words for Writing' : 'My Words';
+}
+
 function findWordByEnglish(text){
   const target=normalizeSpelling(text||'');
   const id=Object.keys(db.words).find(k=>normalizeSpelling(db.words[k].word||'')===target);
   return id ? {id, word:db.words[id]} : null;
 }
 
-function renderMyWords(){
-  ensureMyWordsBook();
-  title.textContent='My Words';
+function renderMyWords(bookId='mywords'){
+  activePersonalBookId=bookId;
+  const b=getPersonalBook(bookId);
+  const pageName=personalBookTitle(bookId);
+
+  title.textContent=pageName;
   subtitle.textContent='';
-  const b=db.books.find(x=>x.id==='mywords');
+
   const ids=[...new Set(b.wordIds||[])].filter(id=>db.words[id]);
   const dueIds=ids.filter(id=>getState(id).status!=='new' && getState(id).due<=Date.now());
   const learned=ids.filter(id=>getState(id).status!=='new').length;
@@ -2632,7 +2658,7 @@ function renderMyWords(){
   </div>
 
   <div class="card" style="margin-top:18px">
-    <h2>My Words</h2>
+    <h2>${escapeHtml(pageName)}</h2>
     <p class="muted">${ids.length} words · ${learned} learned · ${dueIds.length} due</p>
     <div class="corpus-actions">
       <button type="button" class="primary" id="mywords-study">Study new words</button>
@@ -2658,15 +2684,14 @@ function renderMyWords(){
 
   document.getElementById('mywords-study').onclick=()=>{
     const newIds=ids.filter(id=>getState(id).status==='new').slice(0,db.settings.newPerDay);
-    if(!newIds.length){alert('No new words are available in My Words right now.');return;}
+    if(!newIds.length){alert(`No new words are available in ${pageName} right now.`);return;}
     start538Recall(newIds);
   };
   document.getElementById('mywords-review').onclick=()=>{
-    if(!dueIds.length){alert('No My Words are due right now.');return;}
+    if(!dueIds.length){alert(`No words in ${pageName} are due right now.`);return;}
     start538Recall(dueIds);
   };
 }
-
 
 function myWordFallbackInfo(text){
   const existing=findWordByEnglish(text);
@@ -2841,7 +2866,7 @@ function renderMyWordResult(info, message=''){
     <label>Synonyms / paraphrases</label>
     <textarea id="myword-synonyms" placeholder="synonym 1; synonym 2">${escapeHtml(info.synonyms||'')}</textarea>
 
-    <button type="button" class="primary" id="add-myword">Add to My Words</button>
+    <button type="button" class="primary" id="add-myword">Add to ${escapeHtml(personalBookTitle())}</button>
   </div>`;
   document.getElementById('myword-result-audio').onclick=()=>speakCorpus(info.word);
   document.getElementById('add-myword').onclick=()=>addMyWord(info.word,info.phonetic,info.pos);
@@ -2895,24 +2920,25 @@ async function searchMyWord(){
 }
 
 function addMyWord(word,phonetic,pos){
-  const b=ensureMyWordsBook();
+  const bookId=activePersonalBookId || 'mywords';
+  const b=getPersonalBook(bookId);
   const key=normalizeSpelling(word||'');
 
-  // My Words is a personal book: a word is allowed here even if it already
-  // appears in IELTS 538 / 197 / Core Vocabulary. Re-adding the same My Words
-  // entry updates it instead of creating another duplicate.
+  // Each personal book is independent. The same English word may exist in
+  // My Words and My Words for Writing without one hiding the other.
   let id=(b.wordIds||[]).find(existingId=>{
     const existing=db.words[existingId];
     return existing && normalizeSpelling(existing.word||'')===key;
   });
 
   if(!id){
-    id='my_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    const prefix=bookId==='mywords-writing' ? 'myw_' : 'my_';
+    id=prefix+Date.now()+'_'+Math.random().toString(36).slice(2,7);
     db.words[id]={
       word:word,
       phonetic:phonetic||'',
       pos:pos||'',
-      level:'My Words'
+      level:personalBookTitle(bookId)
     };
     b.wordIds.push(id);
   }
@@ -2930,13 +2956,12 @@ function addMyWord(word,phonetic,pos){
   getState(id);
   save();
 
-  // Immediate visual confirmation, then return to the real My Words list.
   const addBtn=document.getElementById('add-myword');
   if(addBtn){
     addBtn.disabled=true;
     addBtn.textContent='Added ✓';
   }
-  setTimeout(()=>renderMyWords(),250);
+  setTimeout(()=>renderMyWords(bookId),250);
 }
 
 window.renderMyWords=renderMyWords;
