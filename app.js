@@ -1,4 +1,4 @@
-const VOCABARU_SYNC_BUILD='2026-08-24-study-review-v10';
+const VOCABARU_SYNC_BUILD='2026-08-24-ipad-save-v11';
 
 window.addEventListener('error',function(e){
   try{
@@ -909,11 +909,53 @@ async function saveVocabAruCloudConfig(){
   await initializeVocabAruAuth();
 }
 
+function buildLightweightLocalState(){
+  const personalBookIds=new Set(['mywords','mywords-writing']);
+  const personalBooks=(db.books||[]).filter(b=>personalBookIds.has(b.id));
+
+  const personalWordIds=new Set();
+  personalBooks.forEach(b=>(b.wordIds||[]).forEach(id=>personalWordIds.add(id)));
+
+  const personalWords={};
+  personalWordIds.forEach(id=>{
+    if(db.words && db.words[id]) personalWords[id]=db.words[id];
+  });
+
+  return {
+    settings:db.settings||{},
+    state:db.state||{},
+    logs:Array.isArray(db.logs)?db.logs:[],
+    corpusState:db.corpusState||{},
+    books:personalBooks,
+    words:personalWords
+  };
+}
+
 function saveLocalOnly(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  try{
+    // Fast path for browsers with enough storage.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    return true;
+  }catch(err){
+    // Safari/iPad often has a much smaller localStorage quota.
+    // Store only personal progress instead of the entire built-in vocabulary.
+    console.warn('Full local save failed; using lightweight VocabAru state.',err);
+    try{
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(buildLightweightLocalState())
+      );
+      return true;
+    }catch(err2){
+      // Never let a storage quota error break Study/Review UI.
+      console.warn('Lightweight local save also failed.',err2);
+      return false;
+    }
+  }
 }
 
 function save(){
+  // Local storage failure must never stop the current learning screen.
   saveLocalOnly();
   queueVocabAruCloudSync();
 }
@@ -1620,7 +1662,7 @@ let currentView='dashboard'; let activeQueue=[]; let queueIndex=0; let revealed=
 function setView(name){ currentView=name; document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===name)); render(); }
 document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>setView(n.dataset.view)));
 
-document.querySelector('#reset-demo').onclick=()=>{ if(confirm('Reset all learning progress and imported books?')){localStorage.removeItem(STORAGE_KEY);db=load();save();render();} };
+document.querySelector('#reset-demo').onclick=()=>{ if(confirm('Reset all learning progress and imported books?')){try{localStorage.removeItem(STORAGE_KEY);}catch(e){} db=load();save();render();} };
 
 function render(){
   try{

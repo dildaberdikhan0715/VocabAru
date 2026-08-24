@@ -1,9 +1,5 @@
-VocabAru10 — Study + Review answer-display fix.
-Upload all files to GitHub VocabAru root and overwrite existing files.
-supabase-config.js is intentionally excluded.
-Fixed shared book study/review flow:
-1. Do you remember? -> No/I don't know -> answer details always appear.
-2. Yes -> spelling -> Check spelling -> result/details always appear.
-3. Spelling screen -> I don't know -> result/details always appear.
-4. Works for Study new words and Review due using the same flow.
-5. Safari-safe spelling-difference code.
+VocabAru11 iPad/Safari save fix.
+Key issue fixed: localStorage quota errors on iPad/Safari no longer stop Check spelling or I don't know after buttons are disabled.
+If full DB is too large, VocabAru automatically stores a lightweight local state with progress + My Words only.
+Cloud sync still runs after each save attempt.
+Upload all files to GitHub root and overwrite. supabase-config.js intentionally excluded.
