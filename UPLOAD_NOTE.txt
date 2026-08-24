@@ -1,0 +1,4 @@
+Upload all files in this folder to the ROOT of your GitHub VocabAru repository.
+supabase-config.js is intentionally NOT included, so your existing live Supabase URL/key stays unchanged.
+After commit, Vercel should redeploy automatically.
+Build: 2026-08-24 synced review + writing words + natural US voice.

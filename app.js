@@ -1,3 +1,4 @@
+const VOCABARU_SYNC_BUILD='2026-08-24-synced';
 const STORAGE_KEY = 'vocabflow_v4';
 const DAY = 86400000;
 
@@ -1424,8 +1425,6 @@ function chooseNaturalUSVoice(){
   if(!voices.length) return null;
 
   const us=voices.filter(v=>/^en-US/i.test(v.lang));
-
-  // Prefer higher-quality/common natural voices when the OS/browser provides them.
   const preferredNames=[
     'Samantha','Ava','Zoe','Allison','Susan','Tom',
     'Google US English','Microsoft Aria','Microsoft Jenny',
@@ -1437,7 +1436,6 @@ function chooseNaturalUSVoice(){
     if(hit) return hit;
   }
 
-  // Prefer non-compact/non-basic US voices when names expose that information.
   const better=us.find(v=>!/compact|basic|espeak|festival/i.test(v.name||''));
   return better || us[0] || voices.find(v=>/^en/i.test(v.lang)) || null;
 }
@@ -1454,7 +1452,10 @@ function speakNaturalUS(text){
   const engine=window.speechSynthesis;
   engine.cancel();
 
+  let spoken=false;
   const doSpeak=()=>{
+    if(spoken) return;
+    spoken=true;
     const u=new SpeechSynthesisUtterance(phrase);
     const voice=chooseNaturalUSVoice();
     u.lang='en-US';
@@ -1465,8 +1466,6 @@ function speakNaturalUS(text){
     engine.speak(u);
   };
 
-  // Safari/iPad and some Chromium builds expose voices asynchronously.
-  // If we speak before voices are ready, they may fall back to a robotic default.
   if(engine.getVoices().length){
     doSpeak();
   }else{
@@ -1477,7 +1476,7 @@ function speakNaturalUS(text){
     engine.addEventListener?.('voiceschanged',handler,{once:true});
     setTimeout(()=>{
       engine.removeEventListener?.('voiceschanged',handler);
-      if(!engine.speaking) doSpeak();
+      doSpeak();
     },350);
   }
 }
@@ -2235,12 +2234,22 @@ function render538SpellingDiff(userText, correctText){
 }
 
 window.checkCurrent538Spelling=function(){
-  if(!current538SpellingId || !current538SpellingWord) return;
   const input=document.getElementById('538-spelling');
-  if(!input) return;
+  const checkBtn=document.getElementById('check-538-spelling');
+
+  if(!current538SpellingId || !current538SpellingWord || !input){
+    if(checkBtn) checkBtn.disabled=false;
+    if(input) input.disabled=false;
+    return;
+  }
 
   const raw=(input.value||'').trim();
-  if(!raw){ input.focus(); return; }
+  if(!raw){
+    if(checkBtn) checkBtn.disabled=false;
+    input.disabled=false;
+    input.focus();
+    return;
+  }
 
   last538SpellingAttempt=raw;
   const correct=normalizeSpelling(raw)===normalizeSpelling(current538SpellingWord.word);
@@ -2454,24 +2463,54 @@ function show538SpellingTest(id,w){
 
     <button type="button"
       class="word-audio-btn spell-word-audio"
-      id="spell-audio"
-      onclick="playCurrent538Spelling()">🔊 Play word</button>
+      id="spell-audio">🔊 Play word</button>
 
     <input class="spelling-input" id="538-spelling"
       autocomplete="off" autocapitalize="none" spellcheck="false"
-      placeholder="Type the English word"
-      onkeydown="if(event.key==='Enter'){event.preventDefault();checkCurrent538Spelling();}">
+      placeholder="Type the English word">
 
     <div style="margin-top:16px">
       <button class="primary"
         id="check-538-spelling"
-        type="button"
-        onclick="checkCurrent538Spelling()">Check spelling</button>
+        type="button">Check spelling</button>
     </div>`;
 
   bind538BackButton();
+
   const input=document.getElementById('538-spelling');
-  if(input) setTimeout(()=>input.focus(),0);
+  const checkBtn=document.getElementById('check-538-spelling');
+  const audioBtn=document.getElementById('spell-audio');
+
+  if(audioBtn){
+    audioBtn.onclick=()=>{
+      if(current538SpellingWord) speak538SpellingWord(current538SpellingWord.word);
+    };
+  }
+
+  const doCheck=()=>{
+    if(checkBtn && checkBtn.disabled) return;
+    const raw=(input?.value||'').trim();
+    if(!raw){
+      if(input) input.focus();
+      return;
+    }
+
+    if(checkBtn) checkBtn.disabled=true;
+    if(input) input.disabled=true;
+    window.checkCurrent538Spelling();
+  };
+
+  if(checkBtn) checkBtn.onclick=doCheck;
+
+  if(input){
+    input.addEventListener('keydown',e=>{
+      if(e.key==='Enter'){
+        e.preventDefault();
+        doCheck();
+      }
+    });
+    setTimeout(()=>input.focus(),0);
+  }
 }
 
 function show538Result(id,w,grade,message){
@@ -2710,11 +2749,11 @@ function renderMyWords(bookId='mywords'){
   document.getElementById('mywords-study').onclick=()=>{
     const newIds=ids.filter(id=>getState(id).status==='new').slice(0,db.settings.newPerDay);
     if(!newIds.length){alert(`No new words are available in ${pageName} right now.`);return;}
-    start538Recall(newIds);
+    start538Recall(newIds,bookId);
   };
   document.getElementById('mywords-review').onclick=()=>{
     if(!dueIds.length){alert(`No words in ${pageName} are due right now.`);return;}
-    start538Recall(dueIds);
+    start538Recall(dueIds,bookId);
   };
 }
 
