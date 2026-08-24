@@ -1,4 +1,9 @@
-VocabAru9 Safari compatibility fix.
-Upload all files to the ROOT of the GitHub VocabAru repository and overwrite existing files.
-supabase-config.js is intentionally excluded so your working Supabase URL/key remains untouched.
-Main fix: older Safari without structuredClone no longer crashes before Dashboard rendering.
+VocabAru10 — Study + Review answer-display fix.
+Upload all files to GitHub VocabAru root and overwrite existing files.
+supabase-config.js is intentionally excluded.
+Fixed shared book study/review flow:
+1. Do you remember? -> No/I don't know -> answer details always appear.
+2. Yes -> spelling -> Check spelling -> result/details always appear.
+3. Spelling screen -> I don't know -> result/details always appear.
+4. Works for Study new words and Review due using the same flow.
+5. Safari-safe spelling-difference code.

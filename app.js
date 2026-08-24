@@ -1,4 +1,4 @@
-const VOCABARU_SYNC_BUILD='2026-08-24-safari-v9';
+const VOCABARU_SYNC_BUILD='2026-08-24-study-review-v10';
 
 window.addEventListener('error',function(e){
   try{
@@ -2297,7 +2297,7 @@ function render538SpellingDiff(userText, correctText){
       userHtml+=escapeHtml(a[i]);
       correctHtml+=escapeHtml(b[j]);
       i++; j++;
-    }else if(j<m && (i===n || dp[i][j+1] >= dp[i+1]?.[j])){
+    }else if(j<m && (i===n || dp[i][j+1] >= ((dp[i+1] && dp[i+1][j]) || 0))){
       // Missing character in user's spelling.
       correctHtml+=`<span class="spelling-error-char">${escapeHtml(b[j])}</span>`;
       userHtml+=`<span class="spelling-missing-char">∅</span>`;
@@ -2313,38 +2313,10 @@ function render538SpellingDiff(userText, correctText){
 }
 
 window.checkCurrent538Spelling=function(){
-  const input=document.getElementById('538-spelling');
-  const checkBtn=document.getElementById('check-538-spelling');
-
-  if(!current538SpellingId || !current538SpellingWord || !input){
-    if(checkBtn) checkBtn.disabled=false;
-    if(input) input.disabled=false;
-    return;
+  const btn=document.getElementById('check-538-spelling');
+  if(btn && typeof btn.onclick==='function'){
+    btn.onclick();
   }
-
-  const raw=(input.value||'').trim();
-  if(!raw){
-    if(checkBtn) checkBtn.disabled=false;
-    input.disabled=false;
-    input.focus();
-    return;
-  }
-
-  last538SpellingAttempt=raw;
-  const correct=normalizeSpelling(raw)===normalizeSpelling(current538SpellingWord.word);
-  const id=current538SpellingId;
-  const w=current538SpellingWord;
-
-  schedule(id, correct?'good':'again');
-
-  show538Result(
-    id,
-    w,
-    correct?'Good':'Again',
-    correct
-      ? 'Correct spelling.'
-      : `Incorrect spelling. Your answer: ${raw}. Correct: ${w.word}`
-  );
 };
 
 function back538ButtonHtml(){
@@ -2369,37 +2341,81 @@ function start538Recall(ids,bookId){
 }
 
 function render538Recall(){
+  const book=db.books.find(b=>b.id===recall538BookId);
   const coreSession=isCoreRecallSession();
-  title.textContent=coreSession?'IELTS Core Vocabulary':'IELTS Reading 538';
-  subtitle.textContent=coreSession?'':'Recall → spelling → meaning & 538 synonyms';
+
+  title.textContent=book ? book.title : (coreSession?'IELTS Core Vocabulary':'Study');
+  subtitle.textContent='';
+
   if(recall538Index>=recall538Queue.length){
-    view.innerHTML=`<div class="card empty"><h2>Session complete</h2><p>Your results have been saved.</p><button class="primary" id="back-538-book">Back to book</button></div>`;
-    document.querySelector('#back-538-book').onclick=()=>renderBook(recall538BookId||'b1');
+    view.innerHTML=`<div class="card empty">
+      <h2>Session complete</h2>
+      <p>Your results have been saved.</p>
+      <button class="primary" id="back-538-book" type="button">Back to book</button>
+    </div>`;
+    const back=document.getElementById('back-538-book');
+    if(back) back.onclick=()=>renderBook(recall538BookId||'b1');
     return;
   }
-  const id=recall538Queue[recall538Index], w=db.words[id];
+
+  const id=recall538Queue[recall538Index];
+  const w=db.words[id];
+
+  if(!w){
+    recall538Index++;
+    render538Recall();
+    return;
+  }
+
   recall538Revealed=false;
+
   view.innerHTML=`<div class="study-card card">
     ${back538ButtonHtml()}
     <div class="muted">Word ${recall538Index+1} / ${recall538Queue.length}</div>
-    <div class="word">${escapeHtml(w.word)} <button class="word-audio-btn" id="recall-audio" title="American English pronunciation">🔊</button></div>
+
+    <div class="word">
+      ${escapeHtml(w.word)}
+      <button class="word-audio-btn" id="recall-audio" type="button"
+        title="American English pronunciation">🔊</button>
+    </div>
+
     <div class="phonetic">${escapeHtml(w.phonetic||'')}</div>
+
     <h3>Do you remember this word?</h3>
+
     <div class="ratings recall-choice">
-      <button class="rating again" id="recall-no" type="button">No</button>
+      <button class="rating again" id="recall-no" type="button">No / I don't know</button>
       <button class="rating good" id="recall-yes" type="button">Yes</button>
     </div>
-    <div id="recall-details"></div>
   </div>`;
-  bind538BackButton();
-  document.querySelector('#recall-audio').onclick=()=>speakCorpus(w.word);
-  document.querySelector('#recall-no').onclick=()=>{
-    schedule(id,'again');
-    show538ForgottenMeaning(w);
-  };
-  document.querySelector('#recall-yes').onclick=()=>show538SpellingTest(id,w);
-}
 
+  bind538BackButton();
+
+  const audio=document.getElementById('recall-audio');
+  const noBtn=document.getElementById('recall-no');
+  const yesBtn=document.getElementById('recall-yes');
+
+  if(audio) audio.onclick=()=>speakCorpus(w.word);
+
+  if(noBtn){
+    noBtn.onclick=()=>{
+      noBtn.disabled=true;
+      if(yesBtn) yesBtn.disabled=true;
+
+      // Unknown meaning: schedule Again, then always reveal the answer.
+      schedule(id,'again');
+      show538ForgottenMeaning(id,w);
+    };
+  }
+
+  if(yesBtn){
+    yesBtn.onclick=()=>{
+      yesBtn.disabled=true;
+      if(noBtn) noBtn.disabled=true;
+      show538SpellingTest(id,w);
+    };
+  }
+}
 
 function isCoreRecallSession(){
   return recall538BookId==='ieltscore';
@@ -2430,32 +2446,69 @@ function coreAnswerDetailsHtml(w){
     </div>`;
 }
 
-function show538ForgottenMeaning(w){
-  const synonyms=w.synonyms||w.paraphrases||'';
+function show538ForgottenMeaning(id,w){
   const card=document.querySelector('.study-card');
+  if(!card) return;
+
+  const synonyms=w.synonyms||w.paraphrases||'';
+  const details=coreDetailsForWord(w.word)||{};
+  const meaning=w.translation||details.translation||'—';
+  const note=w.definition||details.definition||'—';
+  const example=w.example||details.example||'—';
+  const exampleRu=w.exampleRu||details.exampleRu||'—';
+
   card.innerHTML=`${back538ButtonHtml()}
     <div class="muted">Word ${recall538Index+1} / ${recall538Queue.length}</div>
+
     <div class="feedback wrong" style="text-align:left">
-      <strong>${isCoreRecallSession()?'Again — review the word':'Again — meaning & 538 synonyms'}</strong>
+      <strong>Again — review the word</strong>
+
       <div class="answer-spelling">${escapeHtml(w.word)}</div>
       ${w.phonetic?`<div class="phonetic">${escapeHtml(w.phonetic)}</div>`:''}
-      ${isCoreRecallSession()
-        ? coreAnswerDetailsHtml(w)
-        : `<div style="margin-top:12px"><strong>Russian translation</strong><p>${escapeHtml(w.translation||'—')}</p></div>
-           ${w.definition?`<div><strong>Russian definition</strong><p>${escapeHtml(w.definition)}</p></div>`:''}
-           <div><strong>538 synonyms / paraphrases</strong>${render538SynonymAudio(synonyms)}</div>
-           ${w.example?`<div><strong>Example</strong><p>${escapeHtml(w.example)}</p></div>`:''}
-           ${w.exampleRu?`<div><strong>Russian example</strong><p>${escapeHtml(w.exampleRu)}</p></div>`:''}`}
+
+      <div style="margin-top:14px">
+        <strong>Russian meaning</strong>
+        <p>${escapeHtml(meaning)}</p>
+      </div>
+
+      <div>
+        <strong>Russian note / explanation</strong>
+        <p>${escapeHtml(note)}</p>
+      </div>
+
+      <div>
+        <strong>English example</strong>
+        <p>${escapeHtml(example)}</p>
+      </div>
+
+      <div>
+        <strong>Russian translation of example</strong>
+        <p data-core-example-ru>${escapeHtml(exampleRu)}</p>
+      </div>
+
+      ${synonyms?`<div>
+        <strong>Synonyms / paraphrases</strong>
+        ${render538SynonymAudio(synonyms)}
+      </div>`:''}
+
       <div class="corpus-actions">
-        <button class="ghost" id="forgotten-audio">🔊 Play</button>
-        <button class="primary" id="forgotten-next">${recall538Index+1>=recall538Queue.length?'Finish':'Next word'}</button>
+        <button class="ghost" id="forgotten-audio" type="button">🔊 Play</button>
+        <button class="primary" id="forgotten-next" type="button">
+          ${recall538Index+1>=recall538Queue.length?'Finish':'Next word'}
+        </button>
       </div>
     </div>`;
+
   bind538BackButton();
-  if(!isCoreRecallSession()) bind538SynonymAudio(card);
+  bind538SynonymAudio(card);
+
   if(isCoreRecallSession()) hydrateCoreExampleTranslation(w);
-  document.querySelector('#forgotten-audio').onclick=()=>speakCorpus(w.word);
-  document.querySelector('#forgotten-next').onclick=()=>{
+
+  const audio=document.getElementById('forgotten-audio');
+  const next=document.getElementById('forgotten-next');
+
+  if(audio) audio.onclick=()=>speakCorpus(w.word);
+  if(next) next.onclick=()=>{
     recall538Index++;
     render538Recall();
   };
@@ -2537,77 +2590,150 @@ function show538SpellingTest(id,w){
 
   card.innerHTML=`${back538ButtonHtml()}
     <div class="muted">Word ${recall538Index+1} / ${recall538Queue.length}</div>
-    <h2>Spell the word</h2>
-    <p class="muted">The English word, meaning and synonyms are hidden until you check your spelling.</p>
 
-    <button type="button"
-      class="word-audio-btn spell-word-audio"
-      id="spell-audio">🔊 Play word</button>
+    <h2>Spell the word</h2>
+
+    <button type="button" class="word-audio-btn spell-word-audio" id="spell-audio">
+      🔊 Play word
+    </button>
 
     <input class="spelling-input" id="538-spelling"
-      autocomplete="off" autocapitalize="none" spellcheck="false"
+      autocomplete="off"
+      autocapitalize="none"
+      spellcheck="false"
       placeholder="Type the English word">
 
-    <div style="margin-top:16px">
-      <button class="primary"
-        id="check-538-spelling"
-        type="button">Check spelling</button>
+    <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap">
+      <button class="primary" id="check-538-spelling" type="button">
+        Check spelling
+      </button>
+      <button class="ghost" id="dont-know-538-spelling" type="button">
+        I don't know
+      </button>
     </div>`;
 
   bind538BackButton();
 
   const input=document.getElementById('538-spelling');
   const checkBtn=document.getElementById('check-538-spelling');
+  const unknownBtn=document.getElementById('dont-know-538-spelling');
   const audioBtn=document.getElementById('spell-audio');
 
-  if(audioBtn){
-    audioBtn.onclick=()=>{
-      if(current538SpellingWord) speak538SpellingWord(current538SpellingWord.word);
-    };
-  }
+  if(audioBtn) audioBtn.onclick=()=>speak538SpellingWord(w.word);
+
+  const revealUnknown=()=>{
+    if(checkBtn) checkBtn.disabled=true;
+    if(unknownBtn) unknownBtn.disabled=true;
+    if(input) input.disabled=true;
+
+    last538SpellingAttempt='';
+    schedule(id,'again');
+    show538Result(id,w,'Again','You marked the spelling as unknown.');
+  };
 
   const doCheck=()=>{
-    if(checkBtn && checkBtn.disabled) return;
-    const raw=(input?.value||'').trim();
+    const raw=(input && input.value ? input.value : '').trim();
+
     if(!raw){
       if(input) input.focus();
       return;
     }
 
     if(checkBtn) checkBtn.disabled=true;
+    if(unknownBtn) unknownBtn.disabled=true;
     if(input) input.disabled=true;
-    window.checkCurrent538Spelling();
+
+    last538SpellingAttempt=raw;
+
+    const correct=
+      normalizeSpelling(raw)===normalizeSpelling(w.word);
+
+    schedule(id,correct?'good':'again');
+
+    show538Result(
+      id,
+      w,
+      correct?'Good':'Again',
+      correct
+        ? 'Correct spelling.'
+        : `Incorrect spelling. Your answer: ${raw}. Correct: ${w.word}`
+    );
   };
 
   if(checkBtn) checkBtn.onclick=doCheck;
+  if(unknownBtn) unknownBtn.onclick=revealUnknown;
 
   if(input){
-    input.addEventListener('keydown',e=>{
+    input.addEventListener('keydown',function(e){
       if(e.key==='Enter'){
         e.preventDefault();
         doCheck();
       }
     });
-    setTimeout(()=>input.focus(),0);
+
+    setTimeout(function(){
+      try{input.focus();}catch(e){}
+    },0);
   }
 }
 
 function show538Result(id,w,grade,message){
-  const synonyms=w.synonyms||w.paraphrases||'';
-  const s=getState(id);
-  const reviewLabel=grade==='Again'?'Again — Relearning':'Good — Review';
-  const nextText=s.interval<1?'about 10 minutes':`${Math.max(1,Math.round(s.interval))} day${Math.round(s.interval)===1?'':'s'}`;
-
   const card=document.querySelector('.study-card');
   if(!card) return;
 
+  const synonyms=w.synonyms||w.paraphrases||'';
+  const details=coreDetailsForWord(w.word)||{};
+  const meaning=w.translation||details.translation||'—';
+  const note=w.definition||details.definition||'—';
+  const example=w.example||details.example||'—';
+  const exampleRu=w.exampleRu||details.exampleRu||'—';
+  const s=getState(id);
+
+  const nextText=
+    s.interval<1
+      ? 'about 10 minutes'
+      : `${Math.max(1,Math.round(s.interval))} day${Math.round(s.interval)===1?'':'s'}`;
+
+  let spellingHtml='';
+
+  if(last538SpellingAttempt){
+    const isCorrect=
+      normalizeSpelling(last538SpellingAttempt)===normalizeSpelling(w.word);
+
+    if(isCorrect){
+      spellingHtml=`<div class="spelling-check-panel spelling-correct-panel">
+        <div class="spelling-check-title">✓ Your spelling is correct</div>
+        <div class="spelling-attempt-line">${escapeHtml(last538SpellingAttempt)}</div>
+      </div>`;
+    }else{
+      const diff=render538SpellingDiff(last538SpellingAttempt,w.word);
+      spellingHtml=`<div class="spelling-check-panel spelling-wrong-panel">
+        <div class="spelling-check-title">✕ Your spelling is incorrect</div>
+        <div class="spelling-label">Your spelling</div>
+        <div class="spelling-attempt-line">${diff.userHtml}</div>
+        <div class="spelling-label">Correct spelling</div>
+        <div class="spelling-correct-line">${diff.correctHtml}</div>
+      </div>`;
+    }
+  }else{
+    spellingHtml=`<div class="spelling-check-panel spelling-wrong-panel">
+      <div class="spelling-check-title">Spelling marked as unknown</div>
+      <div class="spelling-label">Correct spelling</div>
+      <div class="spelling-correct-line">${escapeHtml(w.word)}</div>
+    </div>`;
+  }
+
   card.innerHTML=`${back538ButtonHtml()}
     <div class="feedback ${grade==='Again'?'wrong':'correct'}" style="text-align:left">
+
       <div class="review-result-header">
         <div>
-          <div class="muted">Review type</div>
-          <div class="review-type-badge ${grade==='Again'?'review-again':'review-good'}">${reviewLabel}</div>
+          <div class="muted">Result</div>
+          <div class="review-type-badge ${grade==='Again'?'review-again':'review-good'}">
+            ${grade}
+          </div>
         </div>
+
         <div>
           <div class="muted">Next review</div>
           <strong>${nextText}</strong>
@@ -2616,71 +2742,61 @@ function show538Result(id,w,grade,message){
 
       <div class="answer-spelling">${escapeHtml(w.word)}</div>
       ${w.phonetic?`<div class="phonetic">${escapeHtml(w.phonetic)}</div>`:''}
-      <div style="margin-top:8px">${escapeHtml(message)}</div>
 
-      ${(()=>{
-        const attempt=last538SpellingAttempt||'';
-        const isCorrect=normalizeSpelling(attempt)===normalizeSpelling(w.word);
-        if(isCorrect){
-          return `<div class="spelling-check-panel spelling-correct-panel">
-            <div class="spelling-check-title">✓ Your spelling is correct</div>
-            <div class="spelling-attempt-line">${escapeHtml(attempt)}</div>
-          </div>`;
-        }
-        const diff=render538SpellingDiff(attempt,w.word);
-        return `<div class="spelling-check-panel spelling-wrong-panel">
-          <div class="spelling-check-title">✕ Your spelling is incorrect</div>
-          <div class="spelling-label">Your spelling</div>
-          <div class="spelling-attempt-line">${diff.userHtml}</div>
-          <div class="spelling-label">Correct spelling</div>
-          <div class="spelling-correct-line">${diff.correctHtml}</div>
-          <div class="spelling-hint">Red characters show the part that differs.</div>
-        </div>`;
-      })()}
+      <div style="margin-top:8px">${escapeHtml(message||'')}</div>
 
-      ${isCoreRecallSession()
-        ? coreAnswerDetailsHtml(w)
-        : `<div style="margin-top:18px">
-             <strong>Russian translation</strong>
-             <p>${escapeHtml(w.translation||'—')}</p>
-           </div>
-           ${w.definition?`<div>
-             <strong>Russian definition</strong>
-             <p>${escapeHtml(w.definition)}</p>
-           </div>`:''}
-           <div>
-             <strong>538 synonyms / paraphrases</strong>
-             ${render538SynonymAudio(synonyms)}
-           </div>
-           ${w.example?`<div>
-             <strong>Example</strong>
-             <p>${escapeHtml(w.example)}</p>
-           </div>`:''}
-           ${w.exampleRu?`<div>
-             <strong>Russian example</strong>
-             <p>${escapeHtml(w.exampleRu)}</p>
-           </div>`:''}`}
+      ${spellingHtml}
+
+      <div style="margin-top:18px">
+        <strong>Russian meaning</strong>
+        <p>${escapeHtml(meaning)}</p>
+      </div>
+
+      <div>
+        <strong>Russian note / explanation</strong>
+        <p>${escapeHtml(note)}</p>
+      </div>
+
+      <div>
+        <strong>English example</strong>
+        <p>${escapeHtml(example)}</p>
+      </div>
+
+      <div>
+        <strong>Russian translation of example</strong>
+        <p data-core-example-ru>${escapeHtml(exampleRu)}</p>
+      </div>
+
+      ${synonyms?`<div>
+        <strong>Synonyms / paraphrases</strong>
+        ${render538SynonymAudio(synonyms)}
+      </div>`:''}
 
       <div class="corpus-actions">
         <button class="ghost" id="result-audio" type="button">🔊 Play word</button>
-        <button class="primary" id="next-538-recall" type="button">${recall538Index+1>=recall538Queue.length?'Finish':'Next word'}</button>
+        <button class="primary" id="next-538-recall" type="button">
+          ${recall538Index+1>=recall538Queue.length?'Finish':'Next word'}
+        </button>
       </div>
     </div>`;
 
   bind538BackButton();
-  if(!isCoreRecallSession()) bind538SynonymAudio(card);
+  bind538SynonymAudio(card);
 
   if(isCoreRecallSession()) hydrateCoreExampleTranslation(w);
-  const audio=document.querySelector('#result-audio');
+
+  const audio=document.getElementById('result-audio');
+  const next=document.getElementById('next-538-recall');
+
   if(audio) audio.onclick=()=>speakCorpus(w.word);
 
-  const next=document.querySelector('#next-538-recall');
-  if(next) next.onclick=()=>{
-    recall538Index++;
-    render538Recall();
-  };
+  if(next){
+    next.onclick=()=>{
+      recall538Index++;
+      render538Recall();
+    };
+  }
 }
-
 
 function renderVocabulary(){
   view.innerHTML=`<table class="table"><thead><tr><th>Word</th><th>Russian</th><th>Status</th><th>Reviews</th><th>Interval</th></tr></thead><tbody>${Object.keys(db.words).sort((a,b)=>db.words[a].word.localeCompare(db.words[b].word)).map(id=>{const w=db.words[id],s=getState(id);return `<tr><td><strong>${escapeHtml(w.word)}</strong></td><td>${escapeHtml(w.translation||'')}</td><td>${s.status}</td><td>${s.reviews}</td><td>${s.interval?humanInterval(s.interval):'—'}</td></tr>`}).join('')}</tbody></table>`;
