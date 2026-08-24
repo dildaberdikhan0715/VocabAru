@@ -1,4 +1,4 @@
-const VOCABARU_SYNC_BUILD='2026-08-24-synced';
+const VOCABARU_SYNC_BUILD='2026-08-24-cross-browser-v8';
 const STORAGE_KEY = 'vocabflow_v4';
 const DAY = 86400000;
 
@@ -771,9 +771,51 @@ if (Array.isArray(window.IELTS538_DATA) && window.IELTS538_DATA.length === 538) 
   seed.books.push({id:'ieltscore',title:'IELTS Core Vocabulary',category:'IELTS',wordIds:[...new Set(ids)],targetCount:data.length,coreVocabulary:true});
 })();
 
+function normalizeVocabAruDb(raw){
+  const base=structuredClone(seed);
+  if(!raw || typeof raw!=='object') return base;
+
+  // Keep user progress, settings, logs and corpus progress.
+  base.settings={...base.settings,...(raw.settings||{})};
+  base.state=(raw.state && typeof raw.state==='object') ? raw.state : {};
+  base.logs=Array.isArray(raw.logs) ? raw.logs : [];
+  base.corpusState=(raw.corpusState && typeof raw.corpusState==='object') ? raw.corpusState : {};
+
+  // Always keep the current built-in vocabulary shipped with this deployment,
+  // then overlay any user-created/personal word records.
+  base.words={...base.words,...((raw.words && typeof raw.words==='object') ? raw.words : {})};
+
+  const rawBooks=Array.isArray(raw.books) ? raw.books : [];
+  const rawById=new Map(rawBooks.filter(Boolean).map(b=>[b.id,b]));
+  const seedById=new Map((base.books||[]).map(b=>[b.id,b]));
+
+  // Current built-in books must use the word lists from the current app build.
+  // This prevents an old cloud snapshot from removing books/cards on a new device.
+  const mergedBooks=(base.books||[]).map(seedBook=>{
+    const old=rawById.get(seedBook.id);
+    return old ? {...old,...seedBook,wordIds:[...(seedBook.wordIds||[])]} : seedBook;
+  });
+
+  // Preserve personal/custom books that are not part of the fixed seed.
+  rawBooks.forEach(b=>{
+    if(!b || !b.id || seedById.has(b.id)) return;
+    mergedBooks.push({
+      ...b,
+      wordIds:Array.isArray(b.wordIds) ? b.wordIds.filter(id=>base.words[id]) : []
+    });
+  });
+
+  base.books=mergedBooks;
+  return base;
+}
+
 function load(){
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || structuredClone(seed); }
-  catch { return structuredClone(seed); }
+  try {
+    const raw=JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return normalizeVocabAruDb(raw);
+  } catch {
+    return structuredClone(seed);
+  }
 }
 let db = load();
 
@@ -902,7 +944,7 @@ async function loadVocabAruFromCloud(){
     if(error) throw error;
 
     if(data && data.state && typeof data.state==='object'){
-      db=data.state;
+      db=normalizeVocabAruDb(data.state);
       saveLocalOnly();
       render();
       return true;
@@ -1563,11 +1605,30 @@ document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>setV
 document.querySelector('#reset-demo').onclick=()=>{ if(confirm('Reset all learning progress and imported books?')){localStorage.removeItem(STORAGE_KEY);db=load();save();render();} };
 
 function render(){
-  ensureMyWordsBook();
-  ensureWritingWordsBook();
-  const map={dashboard:['Dashboard','English vocabulary with Russian explanations'],learn:['Learn','Study new words'],review:['Review','Review words that are due'],books:['Word Books','Manage IELTS, TOEFL, SAT and custom books'],vocabulary:['Vocabulary','All words and learning status'],settings:['Settings','Daily learning preferences']};
-  [title.textContent,subtitle.textContent]=map[currentView];
-  ({dashboard:renderDashboard,learn:renderLearn,review:renderReview,books:renderBooks,vocabulary:renderVocabulary,settings:renderSettings}[currentView])();
+  try{
+    db=normalizeVocabAruDb(db);
+    ensureMyWordsBook();
+    ensureWritingWordsBook();
+    const map={dashboard:['Dashboard','English vocabulary with Russian explanations'],learn:['Learn','Study new words'],review:['Review','Review words that are due'],books:['Word Books','Manage IELTS, TOEFL, SAT and custom books'],vocabulary:['Vocabulary','All words and learning status'],settings:['Settings','Daily learning preferences']};
+    [title.textContent,subtitle.textContent]=map[currentView];
+    ({dashboard:renderDashboard,learn:renderLearn,review:renderReview,books:renderBooks,vocabulary:renderVocabulary,settings:renderSettings}[currentView])();
+  }catch(err){
+    console.error('VocabAru render failed:',err);
+    if(view){
+      view.innerHTML=`<div class="card">
+        <h2>Loading your vocabulary…</h2>
+        <p class="muted">This browser had an older saved version. VocabAru is repairing it.</p>
+        <button type="button" class="primary" id="retry-render">Reload dashboard</button>
+      </div>`;
+      const retry=document.getElementById('retry-render');
+      if(retry) retry.onclick=()=>{
+        db=normalizeVocabAruDb(db);
+        saveLocalOnly();
+        currentView='dashboard';
+        render();
+      };
+    }
+  }
 }
 
 
