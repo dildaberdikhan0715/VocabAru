@@ -1417,53 +1417,78 @@ function uniqueWordIdsForBook(book){
   });
 }
 
-function speakCorpus(text){
-  if(!('speechSynthesis' in window)){ alert('Speech is not supported by this browser.'); return; }
-  speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(text);
-  u.lang='en-US';
-  u.rate=0.82;
-  u.pitch=1;
-  const voices=speechSynthesis.getVoices();
-  const preferred=voices.find(v=>/^en-GB/i.test(v.lang)) || voices.find(v=>/^en/i.test(v.lang));
-  if(preferred) u.voice=preferred;
-  speechSynthesis.speak(u);
+let vocabAruPreferredVoice=null;
+
+function chooseNaturalUSVoice(){
+  const voices=window.speechSynthesis.getVoices()||[];
+  if(!voices.length) return null;
+
+  const us=voices.filter(v=>/^en-US/i.test(v.lang));
+
+  // Prefer higher-quality/common natural voices when the OS/browser provides them.
+  const preferredNames=[
+    'Samantha','Ava','Zoe','Allison','Susan','Tom',
+    'Google US English','Microsoft Aria','Microsoft Jenny',
+    'Microsoft Guy','Siri'
+  ];
+
+  for(const name of preferredNames){
+    const hit=us.find(v=>(v.name||'').toLowerCase().includes(name.toLowerCase()));
+    if(hit) return hit;
+  }
+
+  // Prefer non-compact/non-basic US voices when names expose that information.
+  const better=us.find(v=>!/compact|basic|espeak|festival/i.test(v.name||''));
+  return better || us[0] || voices.find(v=>/^en/i.test(v.lang)) || null;
 }
 
-
-let spellingUtterance538=null;
-function speak538SpellingWord(text){
+function speakNaturalUS(text){
   if(!('speechSynthesis' in window)){
     alert('Speech is not supported by this browser.');
     return;
   }
+
   const phrase=String(text||'').trim();
   if(!phrase) return;
 
   const engine=window.speechSynthesis;
-  const u=new SpeechSynthesisUtterance(phrase);
-  const voices=engine.getVoices();
-  const preferred=
-    voices.find(v=>/^en-US/i.test(v.lang)) ||
-    voices.find(v=>/^en-GB/i.test(v.lang)) ||
-    voices.find(v=>/^en/i.test(v.lang));
+  engine.cancel();
 
-  u.lang=preferred?.lang || 'en-US';
-  if(preferred) u.voice=preferred;
-  u.rate=0.82;
-  u.pitch=1;
-  u.volume=1;
+  const doSpeak=()=>{
+    const u=new SpeechSynthesisUtterance(phrase);
+    const voice=chooseNaturalUSVoice();
+    u.lang='en-US';
+    if(voice) u.voice=voice;
+    u.rate=0.88;
+    u.pitch=1;
+    u.volume=1;
+    engine.speak(u);
+  };
 
-  // Keep a reference until playback finishes.
-  spellingUtterance538=u;
-  u.onend=()=>{ spellingUtterance538=null; };
-  u.onerror=()=>{ spellingUtterance538=null; };
+  // Safari/iPad and some Chromium builds expose voices asynchronously.
+  // If we speak before voices are ready, they may fall back to a robotic default.
+  if(engine.getVoices().length){
+    doSpeak();
+  }else{
+    const handler=()=>{
+      engine.removeEventListener?.('voiceschanged',handler);
+      doSpeak();
+    };
+    engine.addEventListener?.('voiceschanged',handler,{once:true});
+    setTimeout(()=>{
+      engine.removeEventListener?.('voiceschanged',handler);
+      if(!engine.speaking) doSpeak();
+    },350);
+  }
+}
 
-  if(engine.paused) engine.resume();
+function speakCorpus(text){
+  speakNaturalUS(text);
+}
 
-  // Do NOT cancel here. On Chrome/macOS, cancel()+speak() on this dynamically
-  // rendered spelling screen can silently discard the new utterance.
-  engine.speak(u);
+let spellingUtterance538=null;
+function speak538SpellingWord(text){
+  speakNaturalUS(text);
 }
 
 function split538Synonyms(value){
@@ -2210,22 +2235,12 @@ function render538SpellingDiff(userText, correctText){
 }
 
 window.checkCurrent538Spelling=function(){
+  if(!current538SpellingId || !current538SpellingWord) return;
   const input=document.getElementById('538-spelling');
-  const checkBtn=document.getElementById('check-538-spelling');
-
-  if(!current538SpellingId || !current538SpellingWord || !input){
-    if(checkBtn) checkBtn.disabled=false;
-    if(input) input.disabled=false;
-    return;
-  }
+  if(!input) return;
 
   const raw=(input.value||'').trim();
-  if(!raw){
-    if(checkBtn) checkBtn.disabled=false;
-    input.disabled=false;
-    input.focus();
-    return;
-  }
+  if(!raw){ input.focus(); return; }
 
   last538SpellingAttempt=raw;
   const correct=normalizeSpelling(raw)===normalizeSpelling(current538SpellingWord.word);
@@ -2439,56 +2454,24 @@ function show538SpellingTest(id,w){
 
     <button type="button"
       class="word-audio-btn spell-word-audio"
-      id="spell-audio">🔊 Play word</button>
+      id="spell-audio"
+      onclick="playCurrent538Spelling()">🔊 Play word</button>
 
     <input class="spelling-input" id="538-spelling"
       autocomplete="off" autocapitalize="none" spellcheck="false"
-      placeholder="Type the English word">
+      placeholder="Type the English word"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();checkCurrent538Spelling();}">
 
     <div style="margin-top:16px">
       <button class="primary"
         id="check-538-spelling"
-        type="button">Check spelling</button>
+        type="button"
+        onclick="checkCurrent538Spelling()">Check spelling</button>
     </div>`;
 
   bind538BackButton();
-
   const input=document.getElementById('538-spelling');
-  const checkBtn=document.getElementById('check-538-spelling');
-  const audioBtn=document.getElementById('spell-audio');
-
-  if(audioBtn){
-    audioBtn.onclick=()=>{
-      if(current538SpellingWord) speakCorpus(current538SpellingWord.word);
-    };
-  }
-
-  const doCheck=()=>{
-    if(checkBtn && checkBtn.disabled) return;
-    const raw=(input?.value||'').trim();
-    if(!raw){
-      if(input) input.focus();
-      return;
-    }
-
-    // Prevent accidental double submission.
-    if(checkBtn) checkBtn.disabled=true;
-    if(input) input.disabled=true;
-
-    window.checkCurrent538Spelling();
-  };
-
-  if(checkBtn) checkBtn.onclick=doCheck;
-
-  if(input){
-    input.addEventListener('keydown',e=>{
-      if(e.key==='Enter'){
-        e.preventDefault();
-        doCheck();
-      }
-    });
-    setTimeout(()=>input.focus(),0);
-  }
+  if(input) setTimeout(()=>input.focus(),0);
 }
 
 function show538Result(id,w,grade,message){
@@ -2727,11 +2710,11 @@ function renderMyWords(bookId='mywords'){
   document.getElementById('mywords-study').onclick=()=>{
     const newIds=ids.filter(id=>getState(id).status==='new').slice(0,db.settings.newPerDay);
     if(!newIds.length){alert(`No new words are available in ${pageName} right now.`);return;}
-    start538Recall(newIds,bookId);
+    start538Recall(newIds);
   };
   document.getElementById('mywords-review').onclick=()=>{
     if(!dueIds.length){alert(`No words in ${pageName} are due right now.`);return;}
-    start538Recall(dueIds,bookId);
+    start538Recall(dueIds);
   };
 }
 
