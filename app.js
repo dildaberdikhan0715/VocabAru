@@ -780,6 +780,19 @@ if (Array.isArray(window.IELTS538_DATA) && window.IELTS538_DATA.length === 538) 
   seed.books.push({id:'ieltscore',title:'IELTS Core Vocabulary',category:'IELTS',wordIds:[...new Set(ids)],targetCount:data.length,coreVocabulary:true});
 })();
 
+// Built-in IELTS Writing collocations: stable IDs preserve existing progress.
+(function(){
+  const entries=window.VOCABARU_COLLOCATIONS_CORE||[];
+  if(!entries.length) return;
+  const ids=[];
+  entries.forEach(item=>{
+    const id=item.id;
+    seed.words[id]={word:item.word,translation:item.translation,definition:item.definition,example:item.example,exampleRu:item.exampleRu||'',phonetic:'',pos:item.pos,level:item.level,synonyms:item.synonyms||''};
+    ids.push(id);
+  });
+  seed.books.push({id:'collocations_core',title:'Collocations & Grammar Patterns Core',category:'IELTS Writing',wordIds:ids,targetCount:ids.length});
+})();
+
 function vocabAruDeepClone(value){
   // structuredClone is unavailable in some Safari versions (especially older macOS/iPadOS).
   // JSON fallback is sufficient for VocabAru state because it contains plain objects/arrays/numbers/strings.
@@ -1824,8 +1837,8 @@ window.start197Study=function(mode){
     : items.filter(x=>get197State(x.id).status==='new')
   );
   study197Queue=(mode==='due'
-    ? pool
-    : pool.slice(0,(db.settings&&db.settings.newPerDay)||20)
+    ? shuffledCopy(pool)
+    : shuffledCopy(pool).slice(0,(db.settings&&db.settings.newPerDay)||20)
   );
   if(!study197Queue.length){
     alert(mode==='due'
@@ -2040,7 +2053,7 @@ function startCurrentBookNewWords(bookId){
   if(!b) return;
   const ids=uniqueWordIdsForBook(b);
   const pool=ids.filter(id=>getState(id).status==='new');
-  const newIds=(b.id==='ieltscore'?shuffledCopy(pool):pool).slice(0,db.settings.newPerDay);
+  const newIds=shuffledCopy(pool).slice(0,db.settings.newPerDay);
   if(!newIds.length){
     alert('No new words are available in this book right now.');
     return;
@@ -2056,7 +2069,7 @@ function reviewCurrentBookDue(bookId){
     const s=getState(id);
     return s.status!=='new' && s.due<=Date.now();
   });
-  if(b.id==='ieltscore') dueIds=shuffledCopy(dueIds);
+  dueIds=shuffledCopy(dueIds);
   if(!dueIds.length){
     alert('No words are due for review in this book right now.');
     return;
@@ -2170,7 +2183,7 @@ function startCorpusDueSession(){
     return s.attempts>0 && s.due && s.due<=now;
   }).sort((a,b)=>getCorpusState(a.id).due-getCorpusState(b.id).due);
   if(!pool.length){ alert('No listening words are due right now.'); return; }
-  corpusQueue=pool.slice(0,50);
+  corpusQueue=shuffledCopy(pool).slice(0,50);
   corpusIndex=0; corpusChecked=false; corpusSessionLabel='Spaced review';
   renderCorpusQuestion();
 }
@@ -2179,7 +2192,7 @@ function startCorpusMistakeSession(){
   let pool=corpusData().filter(x=>getCorpusState(x.id).errors>0)
     .sort((a,b)=>getCorpusState(b.id).errors-getCorpusState(a.id).errors);
   if(!pool.length){ alert('No spelling mistakes have been recorded yet.'); return; }
-  corpusQueue=pool.slice(0,50);
+  corpusQueue=shuffledCopy(pool).slice(0,50);
   corpusIndex=0; corpusChecked=false; corpusSessionLabel='Mistake practice';
   renderCorpusQuestion();
 }
@@ -2200,7 +2213,7 @@ function startCorpusSection(section,dueOnly=false){
     const later=pool.filter(x=>getCorpusState(x.id).attempts>0 && !(getCorpusState(x.id).due&&getCorpusState(x.id).due<=now));
     pool=[...due,...unseen,...later];
   }
-  corpusQueue=pool.slice(0,50);
+  corpusQueue=shuffledCopy(pool).slice(0,50);
   corpusIndex=0; corpusChecked=false; corpusSessionLabel=`Section ${section}${dueOnly?' · due review':''}`;
   renderCorpusQuestion();
 }
@@ -2872,14 +2885,14 @@ function renderVocabulary(){
 }
 
 function renderLearn(){
-  if(!activeQueue.length || currentView!=='learn'){ activeQueue=newWords().slice(0,db.settings.newPerDay); queueIndex=0; revealed=false; }
+  if(!activeQueue.length || currentView!=='learn'){ activeQueue=shuffledCopy(newWords()).slice(0,db.settings.newPerDay); queueIndex=0; revealed=false; }
   renderQueue('learn');
 }
 function renderReview(){
-  if(!activeQueue.length || currentView!=='review'){ activeQueue=dueWords(); queueIndex=0; revealed=false; }
+  if(!activeQueue.length || currentView!=='review'){ activeQueue=shuffledCopy(dueWords()); queueIndex=0; revealed=false; }
   renderQueue('review');
 }
-function startQueue(ids,mode){ activeQueue=ids.filter(id=>db.words[id] && !isWordSkipped(db.words[id].word)); queueIndex=0; revealed=false; currentView=mode; document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===mode)); renderQueue(mode); }
+function startQueue(ids,mode){ activeQueue=shuffledCopy(ids.filter(id=>db.words[id] && !isWordSkipped(db.words[id].word))); queueIndex=0; revealed=false; currentView=mode; document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===mode)); renderQueue(mode); }
 
 function renderQueue(mode){
   if(queueIndex>=activeQueue.length){view.innerHTML=`<div class="card empty"><h2>${mode==='review'?'Review complete':'Study complete'}</h2><p>${mode==='review'?'No more due words right now.':'You finished this batch of new words.'}</p><button class="primary" id="go-home">Back to dashboard</button></div>`;document.querySelector('#go-home').onclick=()=>{activeQueue=[];setView('dashboard')};return;}
