@@ -2408,7 +2408,7 @@ function bind538BackButton(){
 
 
 function isIELTS538Book(b){
-  return b && (/IELTS Reading 538/i.test(b.title||'') || b.id==='ieltscore');
+  return b && (/IELTS Reading 538/i.test(b.title||'') || b.id==='ieltscore' || b.id==='collocations_core');
 }
 
 let recall538BookId='b1';
