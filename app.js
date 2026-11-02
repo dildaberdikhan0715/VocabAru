@@ -798,6 +798,7 @@ function normalizeVocabAruDb(raw){
   base.state=(raw.state && typeof raw.state==='object') ? raw.state : {};
   base.logs=Array.isArray(raw.logs) ? raw.logs : [];
   base.corpusState=(raw.corpusState && typeof raw.corpusState==='object') ? raw.corpusState : {};
+  base.skippedWords=(raw.skippedWords && typeof raw.skippedWords==='object' && !Array.isArray(raw.skippedWords)) ? raw.skippedWords : {};
 
   // Always keep the current built-in vocabulary shipped with this deployment,
   // then overlay any user-created/personal word records.
@@ -926,6 +927,7 @@ function buildLightweightLocalState(){
     state:db.state||{},
     logs:Array.isArray(db.logs)?db.logs:[],
     corpusState:db.corpusState||{},
+    skippedWords:db.skippedWords||{},
     books:personalBooks,
     words:personalWords
   };
@@ -1383,6 +1385,25 @@ async function hydrateCoreExampleTranslation(w){
   save();
 })();
 
+// Per-account global skip list, keyed by normalized English headword.
+function skipWordKey(text){return normalizeSpelling(String(text||''));}
+function isWordSkipped(text){return !!(db.skippedWords && db.skippedWords[skipWordKey(text)]);}
+function skipWordEverywhere(text){
+  const key=skipWordKey(text);
+  if(!key)return;
+  if(!db.skippedWords || typeof db.skippedWords!=='object')db.skippedWords={};
+  db.skippedWords[key]={word:String(text),at:Date.now()};
+  save();
+}
+function restoreSkippedWord(key){
+  if(db.skippedWords){delete db.skippedWords[key];save();}
+  renderSettings();
+}
+function skipCurrent538Word(w){
+  skipWordEverywhere(w.word);
+  recall538Index++;
+  render538Recall();
+}
 function corpusRawData(){
   return Array.isArray(window.WANGLU_CORPUS_DATA) ? window.WANGLU_CORPUS_DATA : [];
 }
@@ -1394,7 +1415,7 @@ function corpusData(){
   const seen=new Set();
   return raw.filter(item=>{
     const key=normalizeSpelling(item.text);
-    if(blocked.has(key)||seen.has(key)) return false;
+    if(blocked.has(key)||seen.has(key)||isWordSkipped(item.text)) return false;
     seen.add(key);
     return true;
   });
@@ -1514,7 +1535,7 @@ function uniqueWordIdsForBook(book){
     const w=db.words[id];
     if(!w||!w.word) return false;
     const key=normalizeSpelling(w.word);
-    if(blocked.has(key)||seen.has(key)) return false;
+    if(blocked.has(key)||seen.has(key)||isWordSkipped(w.word)) return false;
     seen.add(key);
     return true;
   });
@@ -1633,10 +1654,10 @@ function getState(id){
 }
 function dueWords(){
   const now=Date.now();
-  return Object.keys(db.words).filter(id=>{const s=getState(id);return s.status!=='new' && s.due<=now;});
+  return Object.keys(db.words).filter(id=>{const s=getState(id);return !isWordSkipped(db.words[id].word) && s.status!=='new' && s.due<=now;});
 }
-function newWords(){ return Object.keys(db.words).filter(id=>getState(id).status==='new'); }
-function learnedWords(){ return Object.keys(db.words).filter(id=>getState(id).status!=='new'); }
+function newWords(){ return Object.keys(db.words).filter(id=>getState(id).status==='new' && !isWordSkipped(db.words[id].word)); }
+function learnedWords(){ return Object.keys(db.words).filter(id=>getState(id).status!=='new' && !isWordSkipped(db.words[id].word)); }
 
 // Lightweight adaptive scheduler for the prototype. The app structure makes it easy to replace this with FSRS later.
 function schedule(id, rating){
@@ -2200,7 +2221,9 @@ function renderCorpusQuestion(){
     document.querySelector('#corpus-home').onclick=renderCorpusHome;
     return;
   }
-  const item=corpusQueue[corpusIndex], st=getCorpusState(item.id);
+  const item=corpusQueue[corpusIndex];
+  if(isWordSkipped(item.text)){corpusIndex++;renderCorpusQuestion();return;}
+  const st=getCorpusState(item.id);
   view.innerHTML=`<div class="corpus-card card">
     ${corpusBackButtonHtml()}
     <div class="muted">Item ${corpusIndex+1} / ${corpusQueue.length} · Section ${escapeHtml(item.section||'')}</div>
@@ -2208,7 +2231,7 @@ function renderCorpusQuestion(){
     <p class="muted">The spelling stays hidden until you submit.</p>
     <button class="listen-button" id="play-corpus" aria-label="Play word">🔊</button>
     <input class="spelling-input" id="spelling-answer" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Type the word or phrase">
-    <div style="margin-top:16px"><button class="primary" id="check-spelling">Check spelling</button></div>
+    <div style="margin-top:16px"><button class="primary" id="check-spelling">Check spelling</button> <button class="ghost" id="skip-corpus-word" type="button">Never show again</button></div>
     <div class="corpus-meta">
       <span>Attempts: ${st.attempts}</span>
       <span>Errors: ${st.errors}</span>
@@ -2219,6 +2242,7 @@ function renderCorpusQuestion(){
   const input=document.querySelector('#spelling-answer');
   document.querySelector('#play-corpus').onclick=()=>speakCorpus(item.text);
   document.querySelector('#check-spelling').onclick=()=>checkCorpusAnswer(item);
+  document.querySelector('#skip-corpus-word').onclick=()=>{skipWordEverywhere(item.text);corpusIndex++;renderCorpusQuestion();};
   input.addEventListener('keydown',e=>{if(e.key==='Enter') checkCorpusAnswer(item);});
   setTimeout(()=>{speakCorpus(item.text);input.focus();},180);
 }
@@ -2377,7 +2401,7 @@ function isIELTS538Book(b){
 let recall538BookId='b1';
 function start538Recall(ids,bookId){
   recall538BookId=bookId||recall538BookId||'b1';
-  recall538Queue=ids.slice();
+  recall538Queue=ids.filter(id=>db.words[id] && !isWordSkipped(db.words[id].word));
   recall538Index=0;
   render538Recall();
 }
@@ -2403,7 +2427,7 @@ function render538Recall(){
   const id=recall538Queue[recall538Index];
   const w=db.words[id];
 
-  if(!w){
+  if(!w || isWordSkipped(w.word)){
     recall538Index++;
     render538Recall();
     return;
@@ -2428,6 +2452,7 @@ function render538Recall(){
     <div class="ratings recall-choice">
       <button class="rating again" id="recall-no" type="button">No / I don't know</button>
       <button class="rating good" id="recall-yes" type="button">Yes</button>
+      <button class="rating" id="recall-skip" type="button">Never show again</button>
     </div>
   </div>`;
 
@@ -2436,6 +2461,8 @@ function render538Recall(){
   const audio=document.getElementById('recall-audio');
   const noBtn=document.getElementById('recall-no');
   const yesBtn=document.getElementById('recall-yes');
+  const skipBtn=document.getElementById('recall-skip');
+  if(skipBtn)skipBtn.onclick=()=>skipCurrent538Word(w);
 
   if(audio) audio.onclick=()=>speakCorpus(w.word);
 
@@ -2852,28 +2879,48 @@ function renderReview(){
   if(!activeQueue.length || currentView!=='review'){ activeQueue=dueWords(); queueIndex=0; revealed=false; }
   renderQueue('review');
 }
-function startQueue(ids,mode){ activeQueue=ids; queueIndex=0; revealed=false; currentView=mode; document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===mode)); renderQueue(mode); }
+function startQueue(ids,mode){ activeQueue=ids.filter(id=>db.words[id] && !isWordSkipped(db.words[id].word)); queueIndex=0; revealed=false; currentView=mode; document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===mode)); renderQueue(mode); }
 
 function renderQueue(mode){
   if(queueIndex>=activeQueue.length){view.innerHTML=`<div class="card empty"><h2>${mode==='review'?'Review complete':'Study complete'}</h2><p>${mode==='review'?'No more due words right now.':'You finished this batch of new words.'}</p><button class="primary" id="go-home">Back to dashboard</button></div>`;document.querySelector('#go-home').onclick=()=>{activeQueue=[];setView('dashboard')};return;}
   if(!activeQueue.length){view.innerHTML=`<div class="card empty"><h2>${mode==='review'?'Nothing due':'No new words'}</h2><p>${mode==='review'?'You are caught up.':'Import another word book or reset the demo.'}</p></div>`;return;}
-  const id=activeQueue[queueIndex],w=db.words[id],s=getState(id);
+  const id=activeQueue[queueIndex],w=db.words[id];
+  if(!w || isWordSkipped(w.word)){queueIndex++;renderQueue(mode);return;}
+  const s=getState(id);
   view.innerHTML=`<div class="word-card card">
     <div class="word-head"><div><div class="word">${escapeHtml(w.word)} <button class="word-audio-btn" id="word-audio" title="American English pronunciation" aria-label="Play pronunciation">🔊</button></div><div class="phonetic">${escapeHtml(w.phonetic||'')} · ${escapeHtml(w.pos||'')}</div></div><span class="tag">${escapeHtml(w.level||'')}</span></div>
     ${revealed?`<div class="answer"><div class="definition"><strong>${escapeHtml(w.translation||'')}</strong><br>${escapeHtml(w.definition||'')}</div><div class="example"><strong>${escapeHtml(w.example||'')}</strong><br><span class="muted">${escapeHtml(w.exampleRu||'')}</span></div>${w.synonyms?`<div class="definition"><strong>Paraphrases / synonyms</strong><br>${escapeHtml(w.synonyms)}</div>`:''}
-    <div class="ratings">${ratingButton('again','Again','10 min')}${ratingButton('hard','Hard',preview(id,'hard'))}${ratingButton('good','Good',preview(id,'good'))}${ratingButton('easy','Easy',preview(id,'easy'))}</div></div>`:`<div class="empty"><p>Try to recall the Russian meaning first.</p><button class="primary" id="show-answer">Show answer</button></div>`}
+    <div class="ratings">${ratingButton('again','Again','10 min')}${ratingButton('hard','Hard',preview(id,'hard'))}${ratingButton('good','Good',preview(id,'good'))}${ratingButton('easy','Easy',preview(id,'easy'))}</div></div>`:`<div class="empty"><p>Try to recall the Russian meaning first.</p><button class="primary" id="show-answer">Show answer</button> <button class="ghost" id="skip-queue-word" type="button">Never show again</button></div>`}
     <div class="muted" style="margin-top:18px">${queueIndex+1} / ${activeQueue.length}${s.reviews?` · reviewed ${s.reviews}×`:''}</div>
   </div>`;
   const audioBtn=document.querySelector('#word-audio');
   if(audioBtn) audioBtn.onclick=()=>speakCorpus(w.word);
-  if(!revealed) document.querySelector('#show-answer').onclick=()=>{revealed=true;renderQueue(mode)};
+  if(!revealed){
+    document.querySelector('#show-answer').onclick=()=>{revealed=true;renderQueue(mode)};
+    document.querySelector('#skip-queue-word').onclick=()=>{skipWordEverywhere(w.word);revealed=false;queueIndex++;renderQueue(mode)};
+  }
   document.querySelectorAll('.rating').forEach(btn=>btn.onclick=()=>{schedule(id,btn.dataset.rating);revealed=false;queueIndex++;renderQueue(mode)});
 }
 function ratingButton(r,label,next){return `<button class="rating" data-rating="${r}"><strong>${label}</strong><small>${next}</small></button>`}
 function preview(id,r){const s={...getState(id)};let interval=s.interval||0;if(r==='hard') interval=interval<1?1:Math.max(1,interval*1.4);if(r==='good') interval=interval<1?1:Math.max(1,interval*s.ease);if(r==='easy') interval=interval<1?3:Math.max(3,interval*s.ease*1.35);return humanInterval(interval)}
 
 function renderSettings(){
+  const skipped=Object.entries(db.skippedWords||{}).sort((a,b)=>(b[1].at||0)-(a[1].at||0));
   view.innerHTML=`<div class="card" style="max-width:560px"><h2>Daily new words</h2><p class="muted">How many new words should appear each day?</p><input id="new-per-day" type="number" min="1" max="100" value="${db.settings.newPerDay}" style="padding:12px;border:1px solid var(--line);border-radius:10px;width:120px"><button class="primary" id="save-settings" style="margin-left:10px">Save</button></div>`;
+  const skippedContainer=document.createElement('div');
+  skippedContainer.className='card';
+  skippedContainer.style='max-width:700px;margin-top:18px';
+  skippedContainer.innerHTML=`<h2>Skipped Words (${skipped.length})</h2><p class="muted">These words are hidden from every word book, study and review session. Restore them at any time.</p><input id="skipped-search" type="search" placeholder="Search skipped words" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:10px"><div id="skipped-list"></div>`;
+  view.appendChild(skippedContainer);
+  const list=document.getElementById('skipped-list');
+  function showSkipped(){
+    const q=skipWordKey(document.getElementById('skipped-search').value);
+    const matches=skipped.filter(([k,v])=>!q||k.includes(q));
+    list.innerHTML=matches.length?matches.map(([k,v],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #eee"><span>${escapeHtml(v.word||k)}</span><button class="ghost restore-skipped" type="button" data-skip-index="${i}">Restore</button></div>`).join(''):'<p class="muted">No matching skipped words.</p>';
+    list.querySelectorAll('.restore-skipped').forEach(btn=>btn.onclick=()=>restoreSkippedWord(matches[Number(btn.dataset.skipIndex)][0]));
+  }
+  document.getElementById('skipped-search').oninput=showSkipped;
+  showSkipped();
   document.querySelector('#save-settings').onclick=()=>{db.settings.newPerDay=Math.max(1,Math.min(100,Number(document.querySelector('#new-per-day').value)||10));save();alert('Saved');};
 }
 
