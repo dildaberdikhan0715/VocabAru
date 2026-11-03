@@ -806,6 +806,27 @@ if (Array.isArray(window.IELTS538_DATA) && window.IELTS538_DATA.length === 538) 
   seed.books.push({id:'collocations_extend',title:'Collocations & Grammar Patterns Extend',category:'IELTS Writing',wordIds:ids,targetCount:ids.length});
 })();
 
+// IELTS Writing Core: 20 selectable topics, stable word IDs and existing progress preserved.
+(function(){
+  const entries=window.VOCABARU_WRITING_TOPIC_CORE||[];
+  if(!entries.length)return;
+  const allIds=[];
+  const topics=new Map();
+  entries.forEach(item=>{
+    const id=item.id;
+    seed.words[id]={word:item.word,translation:item.translation,definition:'',example:item.example,exampleRu:'',phonetic:'',pos:item.pos||'Collocation / Grammar Pattern',level:'IELTS Writing',synonyms:''};
+    allIds.push(id);
+    if(!topics.has(item.topic))topics.set(item.topic,[]);
+    topics.get(item.topic).push(id);
+  });
+  seed.books.push({id:'writing_topic_core',title:'IELTS Writing Core Vocabulary',category:'IELTS Writing',wordIds:allIds,targetCount:allIds.length,topicParent:true});
+  let n=0;
+  topics.forEach((ids,topic)=>{
+    n++;
+    seed.books.push({id:'writing_topic_core_'+String(n).padStart(2,'0'),title:topic.replace(/^\d+\s*/,''),category:'IELTS Writing',wordIds:ids,targetCount:ids.length,topicChild:true,topicParentId:'writing_topic_core'});
+  });
+})();
+
 function vocabAruDeepClone(value){
   // structuredClone is unavailable in some Safari versions (especially older macOS/iPadOS).
   // JSON fallback is sufficient for VocabAru state because it contains plain objects/arrays/numbers/strings.
@@ -1437,7 +1458,7 @@ function corpusData(){
   const raw=corpusRawData();
   const book=db.books.find(b=>b.corpusMode);
   if(!book) return raw;
-  const blocked=priorBookWordKeys(book.id);
+  const blocked=(book.topicChild||book.topicParent)?new Set():priorBookWordKeys(book.id);
   const seen=new Set();
   return raw.filter(item=>{
     const key=normalizeSpelling(item.text);
@@ -1996,7 +2017,7 @@ function renderDashboard(){
       <div class="card"><div class="muted">Strong / mastered</div><div class="metric">${mastered}</div></div>
     </div>
     <div class="section-title"><h2>Continue</h2><button class="primary" id="start-review">Review now</button></div>
-    <div class="grid books">${db.books.map(bookCard).join('')}</div>
+    <div class="grid books">${db.books.filter(b=>!b.topicChild).map(bookCard).join('')}</div>
     <div class="section-title"><h2>How review works</h2></div>
     <div class="notice">Words are scheduled individually. Curated word books share progress across duplicate words. My Words and My Words for Writing are separate personal books: anything you add stays in the book you chose.</div>`;
   document.querySelector('#start-review').onclick=()=>setView(due?'review':'learn');
@@ -2041,12 +2062,30 @@ function openBookSafe(bookId){
     renderCorpusHome();
     return;
   }
+  if(b.topicParent){renderWritingTopicPicker();return;}
   renderBook(bookId);
 }
 window.openBookSafe=openBookSafe;
 
+function renderWritingTopicPicker(){
+  const parent=db.books.find(b=>b.id==='writing_topic_core');
+  if(!parent){setView('books');return;}
+  title.textContent=parent.title;
+  subtitle.textContent='Choose a topic · 20 topics · 400 entries';
+  const topics=db.books.filter(b=>b.topicChild&&b.topicParentId===parent.id);
+  view.innerHTML=`<div class="toolbar"><button class="ghost" id="writing-topics-back">← Back to Word Books</button><button class="primary" id="writing-all-topics">All topics (${parent.wordIds.length})</button></div><div class="grid books">${topics.map(bookCard).join('')}</div>`;
+  document.getElementById('writing-topics-back').onclick=()=>setView('books');
+  document.getElementById('writing-all-topics').onclick=()=>renderBook(parent.id);
+  view.querySelectorAll('.open-book').forEach(btn=>btn.onclick=()=>renderBook(btn.dataset.id));
+}
+function returnFromWritingTopic(bookId){
+  const b=db.books.find(x=>x.id===bookId);
+  if(b&&(b.topicChild||b.topicParent)){renderWritingTopicPicker();return;}
+  renderBook(bookId||'b1');
+}
+
 function renderBooks(){
-  view.innerHTML=`<div class="toolbar"><button class="primary" id="add-book">+ Add word book</button></div><div class="grid books">${db.books.map(bookCard).join('')}</div>`;
+  view.innerHTML=`<div class="toolbar"><button class="primary" id="add-book">+ Add word book</button></div><div class="grid books">${db.books.filter(b=>!b.topicChild).map(bookCard).join('')}</div>`;
   document.querySelector('#add-book').onclick=()=>document.querySelector('#import-dialog').showModal();
   document.querySelectorAll('.open-book').forEach(btn=>btn.onclick=()=>openBookSafe(btn.dataset.id));
 }
@@ -2108,7 +2147,7 @@ function renderBook(bookId){
     <button class="ghost" id="review-book" type="button" data-book="${escapeHtml(bookId)}">Review due (${dueIds.length})</button>
   </div>
   <table class="table"><thead><tr><th>Word</th><th>Part of Speech</th><th>Russian</th><th>Status</th><th>Next review</th><th>Skip</th></tr></thead><tbody>${ids.map(id=>rowForWord(id)).join('')}</tbody></table>`;
-  document.querySelector('#back-books').onclick=()=>setView('books');
+  document.querySelector('#back-books').onclick=()=>b.topicChild||b.topicParent?renderWritingTopicPicker():setView('books');
   // Skip from the book list without entering a study session.
   view.querySelectorAll('.skip-book-word').forEach(btn=>btn.onclick=()=>{
     const w=db.words[btn.dataset.wordId];
@@ -2433,12 +2472,12 @@ function back538ButtonHtml(){
 }
 function bind538BackButton(){
   const btn=document.querySelector('#back-538-study');
-  if(btn) btn.onclick=()=>renderBook(recall538BookId||'b1');
+  if(btn) btn.onclick=()=>returnFromWritingTopic(recall538BookId||'b1');
 }
 
 
 function isIELTS538Book(b){
-  return b && (/IELTS Reading 538/i.test(b.title||'') || b.id==='ieltscore' || b.id==='collocations_core' || b.id==='collocations_extend');
+  return b && (/IELTS Reading 538/i.test(b.title||'') || b.id==='ieltscore' || b.id==='collocations_core' || b.id==='collocations_extend' || b.topicParent || b.topicChild);
 }
 
 let recall538BookId='b1';
@@ -2463,7 +2502,7 @@ function render538Recall(){
       <button class="primary" id="back-538-book" type="button">Back to book</button>
     </div>`;
     const back=document.getElementById('back-538-book');
-    if(back) back.onclick=()=>renderBook(recall538BookId||'b1');
+    if(back) back.onclick=()=>returnFromWritingTopic(recall538BookId||'b1');
     return;
   }
 
