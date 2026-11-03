@@ -1579,7 +1579,8 @@ function uniqueWordIdsForBook(book){
   // Writing Topic Core is a deliberately overlapping thematic collection.
   // Do not hide entries simply because the same phrase exists in another book
   // (including its parent/child topic books). Explicit user skips still apply.
-  const blocked=(book.topicParent || book.topicChild) ? new Set() : priorBookWordKeys(book.id);
+  const isWritingTopicBook=String(book.id||'').startsWith('writing_topic_core');
+  const blocked=isWritingTopicBook ? new Set() : priorBookWordKeys(book.id);
   const seen=new Set();
   return (book.wordIds||[]).filter(id=>{
     const w=db.words[id];
@@ -2074,7 +2075,7 @@ function bookCard(b){
   const due=ids.filter(id=>{const s=getState(id);return s.status!=='new' && s.due<=Date.now();}).length;
   const pct=ids.length?Math.round(learned/ids.length*100):0;
   const removed=(b.wordIds||[]).length-ids.length;
-  return `<div class="card book-card"><span class="pill">${b.category}</span><h3>${escapeHtml(b.title)}</h3><div class="muted">${learned} / ${ids.length} unique words learned · ${due} due${removed?` · ${removed} duplicates skipped`:''}</div><div class="progress"><span style="width:${pct}%"></span></div><button class="ghost open-book" data-id="${b.id}">Open</button></div>`;
+  return `<div class="card book-card"><span class="pill">${b.category}</span><h3>${escapeHtml(b.title)}</h3><div class="muted">${learned} / ${ids.length} unique words learned · ${due} due${removed?` · ${removed} excluded/skipped`:''}</div><div class="progress"><span style="width:${pct}%"></span></div><button class="ghost open-book" data-id="${b.id}">Open</button></div>`;
 }
 
 
@@ -2103,7 +2104,7 @@ function renderWritingTopicPicker(){
   const parent=db.books.find(b=>b.id==='writing_topic_core');
   if(!parent){setView('books');return;}
   title.textContent=parent.title;
-  subtitle.textContent='Choose a topic · 20 topics · 400 entries';
+  subtitle.textContent='Choose a topic · 20 topics · 400 entries · V21';
   const topics=db.books.filter(b=>b.topicChild&&b.topicParentId===parent.id);
   view.innerHTML=`<div class="toolbar"><button class="ghost" id="writing-topics-back">← Back to Word Books</button><button class="primary" id="writing-all-topics">All topics (${parent.wordIds.length})</button></div><div class="grid books">${topics.map(bookCard).join('')}</div>`;
   document.getElementById('writing-topics-back').onclick=()=>setView('books');
