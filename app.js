@@ -2107,7 +2107,7 @@ function renderBook(bookId){
     <button class="primary" id="study-book" type="button" data-book="${escapeHtml(bookId)}">Study new words</button>
     <button class="ghost" id="review-book" type="button" data-book="${escapeHtml(bookId)}">Review due (${dueIds.length})</button>
   </div>
-  <table class="table"><thead><tr><th>Word</th><th>Russian</th><th>Status</th><th>Next review</th><th>Skip</th></tr></thead><tbody>${ids.map(id=>rowForWord(id)).join('')}</tbody></table>`;
+  <table class="table"><thead><tr><th>Word</th><th>Part of Speech</th><th>Russian</th><th>Status</th><th>Next review</th><th>Skip</th></tr></thead><tbody>${ids.map(id=>rowForWord(id)).join('')}</tbody></table>`;
   document.querySelector('#back-books').onclick=()=>setView('books');
   // Skip from the book list without entering a study session.
   view.querySelectorAll('.skip-book-word').forEach(btn=>btn.onclick=()=>{
@@ -2127,7 +2127,16 @@ function renderBook(bookId){
     }
   };
 }
-function rowForWord(id){const w=db.words[id],s=getState(id);return `<tr><td><strong>${escapeHtml(w.word)}</strong><br><span class="muted">${escapeHtml(w.pos||'')}</span></td><td>${escapeHtml(w.translation||'')}</td><td>${s.status}</td><td>${s.status==='new'?'—':formatDue(s.due)}</td><td><button type="button" class="ghost skip-book-word" data-word-id="${escapeHtml(id)}" title="Never show again">Skip</button></td></tr>`}
+// Display-only POS metadata: never alter saved word IDs or study progress.
+const vocabAruPosLookup=new Map((Array.isArray(window.IELTS_CORE_VOCAB_DATA)?window.IELTS_CORE_VOCAB_DATA:[]).map(item=>[normalizeSpelling(item.word||''),item.pos||'']));
+function displayPartOfSpeech(w){
+  const raw=String((w&&w.pos)||vocabAruPosLookup.get(normalizeSpelling((w&&w.word)||''))||'').trim();
+  if(!raw)return '—';
+  if(/collocation|grammar pattern/i.test(raw))return 'Collocation / Grammar Pattern';
+  // The Oxford source often embeds a CEFR level in the POS string (e.g. "adj. B2").
+  return raw.replace(/\s+(?:A1|A2|B1|B2|C1|C2)(?=\s|$)/gi,'').trim()||'—';
+}
+function rowForWord(id){const w=db.words[id],s=getState(id);return `<tr><td><strong>${escapeHtml(w.word)}</strong></td><td>${escapeHtml(displayPartOfSpeech(w))}</td><td>${escapeHtml(w.translation||'')}</td><td>${s.status}</td><td>${s.status==='new'?'—':formatDue(s.due)}</td><td><button type="button" class="ghost skip-book-word" data-word-id="${escapeHtml(id)}" title="Never show again">Skip</button></td></tr>`}
 
 
 let corpusQueue=[]; let corpusIndex=0; let corpusChecked=false; let corpusSessionLabel='';
