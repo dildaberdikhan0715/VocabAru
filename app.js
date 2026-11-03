@@ -2107,8 +2107,16 @@ function renderBook(bookId){
     <button class="primary" id="study-book" type="button" data-book="${escapeHtml(bookId)}">Study new words</button>
     <button class="ghost" id="review-book" type="button" data-book="${escapeHtml(bookId)}">Review due (${dueIds.length})</button>
   </div>
-  <table class="table"><thead><tr><th>Word</th><th>Russian</th><th>Status</th><th>Next review</th></tr></thead><tbody>${ids.map(id=>rowForWord(id)).join('')}</tbody></table>`;
+  <table class="table"><thead><tr><th>Word</th><th>Russian</th><th>Status</th><th>Next review</th><th>Skip</th></tr></thead><tbody>${ids.map(id=>rowForWord(id)).join('')}</tbody></table>`;
   document.querySelector('#back-books').onclick=()=>setView('books');
+  // Skip from the book list without entering a study session.
+  view.querySelectorAll('.skip-book-word').forEach(btn=>btn.onclick=()=>{
+    const w=db.words[btn.dataset.wordId];
+    if(!w)return;
+    if(!confirm(`Never study “${w.word}” again? This applies to all books. You can restore it in Settings → Skipped Words.`))return;
+    skipWordEverywhere(w.word);
+    renderBook(bookId);
+  });
   document.querySelector('#study-book').onclick=()=>startCurrentBookNewWords(bookId);
   document.querySelector('#review-book').onclick=()=>{
     if(isIELTS538Book(b)){
@@ -2119,7 +2127,7 @@ function renderBook(bookId){
     }
   };
 }
-function rowForWord(id){const w=db.words[id],s=getState(id);return `<tr><td><strong>${escapeHtml(w.word)}</strong><br><span class="muted">${escapeHtml(w.pos||'')}</span></td><td>${escapeHtml(w.translation||'')}</td><td>${s.status}</td><td>${s.status==='new'?'—':formatDue(s.due)}</td></tr>`}
+function rowForWord(id){const w=db.words[id],s=getState(id);return `<tr><td><strong>${escapeHtml(w.word)}</strong><br><span class="muted">${escapeHtml(w.pos||'')}</span></td><td>${escapeHtml(w.translation||'')}</td><td>${s.status}</td><td>${s.status==='new'?'—':formatDue(s.due)}</td><td><button type="button" class="ghost skip-book-word" data-word-id="${escapeHtml(id)}" title="Never show again">Skip</button></td></tr>`}
 
 
 let corpusQueue=[]; let corpusIndex=0; let corpusChecked=false; let corpusSessionLabel='';
