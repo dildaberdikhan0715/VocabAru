@@ -849,6 +849,27 @@ if (Array.isArray(window.IELTS538_DATA) && window.IELTS538_DATA.length === 538) 
   });
 })();
 
+// IELTS Academic Writing Task 1 Core: 220 entries, 9 topic groups.
+(function(){
+  const entries=window.VOCABARU_ACADEMIC_TASK1_CORE||[];
+  if(!entries.length)return;
+  const allIds=[];
+  const topics=new Map();
+  entries.forEach(item=>{
+    const id=item.id;
+    seed.words[id]={word:item.word,translation:item.translation,definition:item.pos||'',example:item.example,exampleRu:'',phonetic:'',pos:item.pos||'',level:'Academic Task 1',synonyms:''};
+    allIds.push(id);
+    if(!topics.has(item.topic))topics.set(item.topic,[]);
+    topics.get(item.topic).push(id);
+  });
+  seed.books.push({id:'academic_task1_core',title:'IELTS Academic Writing Task 1 — Core 220',category:'IELTS Writing',wordIds:allIds,targetCount:allIds.length,topicParent:true});
+  let n=0;
+  topics.forEach((ids,topic)=>{
+    n++;
+    seed.books.push({id:'academic_task1_core_'+String(n).padStart(2,'0'),title:topic,category:'IELTS Writing',wordIds:ids,targetCount:ids.length,topicChild:true,topicParentId:'academic_task1_core'});
+  });
+})();
+
 function vocabAruDeepClone(value){
   // structuredClone is unavailable in some Safari versions (especially older macOS/iPadOS).
   // JSON fallback is sufficient for VocabAru state because it contains plain objects/arrays/numbers/strings.
@@ -873,7 +894,7 @@ function normalizeVocabAruDb(raw){
   // then overlay any user-created/personal word records.
   base.words={...base.words,...((raw.words && typeof raw.words==='object') ? raw.words : {})};
   // Built-in topic definitions must come from the current JS dataset; keep progress separately in base.state.
-  for(const id of Object.keys(seed.words)){if(id.startsWith('writing_topic_core_') || id.startsWith('writing_topic_extend_'))base.words[id]=seed.words[id];}
+  for(const id of Object.keys(seed.words)){if(id.startsWith('writing_topic_core_') || id.startsWith('writing_topic_extend_') || id.startsWith('academic_task1_core_220_'))base.words[id]=seed.words[id];}
 
   const rawBooks=Array.isArray(raw.books) ? raw.books : [];
   const rawById=new Map(rawBooks.filter(Boolean).map(b=>[b.id,b]));
@@ -1603,7 +1624,7 @@ function uniqueWordIdsForBook(book){
   // Writing Topic Core is a deliberately overlapping thematic collection.
   // Do not hide entries simply because the same phrase exists in another book
   // (including its parent/child topic books). Explicit user skips still apply.
-  const isWritingTopicBook=(String(book.id||'').startsWith('writing_topic_core') || String(book.id||'').startsWith('writing_topic_extend'));
+  const isWritingTopicBook=(String(book.id||'').startsWith('writing_topic_core') || String(book.id||'').startsWith('writing_topic_extend') || String(book.id||'').startsWith('academic_task1_core'));
   const blocked=isWritingTopicBook ? new Set() : priorBookWordKeys(book.id);
   const seen=new Set();
   return (book.wordIds||[]).filter(id=>{
@@ -2129,7 +2150,7 @@ function renderWritingTopicPicker(parentId='writing_topic_core'){
   if(!parent){setView('books');return;}
   const topics=db.books.filter(b=>b.topicChild&&b.topicParentId===parent.id);
   title.textContent=parent.title;
-  subtitle.textContent=`Choose a topic · ${topics.length} topics · ${parent.wordIds.length} entries · V22`;
+  subtitle.textContent=`Choose a topic · ${topics.length} topics · ${parent.wordIds.length} entries · V23`;
   view.innerHTML=`<div class="toolbar"><button class="ghost" id="writing-topics-back">← Back to Word Books</button><button class="primary" id="writing-all-topics">All topics (${parent.wordIds.length})</button></div><div class="grid books">${topics.map(bookCard).join('')}</div>`;
   document.getElementById('writing-topics-back').onclick=()=>setView('books');
   document.getElementById('writing-all-topics').onclick=()=>renderBook(parent.id);
