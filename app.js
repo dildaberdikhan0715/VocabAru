@@ -2489,6 +2489,7 @@ function render538Recall(){
     </div>
 
     <div class="phonetic">${escapeHtml(w.phonetic||'')}</div>
+    <div class="muted study-part-of-speech" style="margin-top:8px;font-size:18px">Part of Speech: <strong>${escapeHtml(displayPartOfSpeech(w))}</strong></div>
 
     <h3>Do you remember this word?</h3>
 
