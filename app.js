@@ -793,6 +793,19 @@ if (Array.isArray(window.IELTS538_DATA) && window.IELTS538_DATA.length === 538) 
   seed.books.push({id:'collocations_core',title:'Collocations & Grammar Patterns Core',category:'IELTS Writing',wordIds:ids,targetCount:ids.length});
 })();
 
+// Additional IELTS Writing collocations (400): stable IDs and non-destructive book registration.
+(function(){
+  const entries=window.VOCABARU_COLLOCATIONS_EXTEND||[];
+  if(!entries.length) return;
+  const ids=[];
+  entries.forEach(item=>{
+    const id=item.id;
+    seed.words[id]={word:item.word,translation:item.translation,definition:item.definition,example:item.example,exampleRu:item.exampleRu||'',phonetic:'',pos:item.pos,level:item.level,synonyms:item.synonyms||''};
+    ids.push(id);
+  });
+  seed.books.push({id:'collocations_extend',title:'Collocations & Grammar Patterns Extend',category:'IELTS Writing',wordIds:ids,targetCount:ids.length});
+})();
+
 function vocabAruDeepClone(value){
   // structuredClone is unavailable in some Safari versions (especially older macOS/iPadOS).
   // JSON fallback is sufficient for VocabAru state because it contains plain objects/arrays/numbers/strings.
@@ -2408,7 +2421,7 @@ function bind538BackButton(){
 
 
 function isIELTS538Book(b){
-  return b && (/IELTS Reading 538/i.test(b.title||'') || b.id==='ieltscore' || b.id==='collocations_core');
+  return b && (/IELTS Reading 538/i.test(b.title||'') || b.id==='ieltscore' || b.id==='collocations_core' || b.id==='collocations_extend');
 }
 
 let recall538BookId='b1';
