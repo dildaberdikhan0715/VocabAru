@@ -1576,7 +1576,10 @@ function priorBookWordKeys(bookId){
   return keys;
 }
 function uniqueWordIdsForBook(book){
-  const blocked=priorBookWordKeys(book.id);
+  // Writing Topic Core is a deliberately overlapping thematic collection.
+  // Do not hide entries simply because the same phrase exists in another book
+  // (including its parent/child topic books). Explicit user skips still apply.
+  const blocked=(book.topicParent || book.topicChild) ? new Set() : priorBookWordKeys(book.id);
   const seen=new Set();
   return (book.wordIds||[]).filter(id=>{
     const w=db.words[id];
@@ -1695,7 +1698,36 @@ function corpusLearningInfo(item){
   };
 }
 
+// A Writing Topic entry can share the learning schedule of the same phrase
+// in an earlier curated book. Keep its own state if it was already studied.
+const writingTopicCanonicalIds = new Map();
+(function buildWritingTopicCanonicalIds(){
+  const firstByText=new Map();
+  for(const b of db.books){
+    if(b.topicParent || b.topicChild) continue;
+    for(const id of b.wordIds||[]){
+      const w=db.words[id];
+      if(w && w.word){
+        const key=normalizeSpelling(w.word);
+        if(!firstByText.has(key)) firstByText.set(key,id);
+      }
+    }
+  }
+  for(const b of db.books){
+    if(!b.topicParent) continue;
+    for(const id of b.wordIds||[]){
+      const w=db.words[id];
+      if(!w || !w.word) continue;
+      const canonical=firstByText.get(normalizeSpelling(w.word));
+      if(canonical && canonical!==id) writingTopicCanonicalIds.set(id,canonical);
+    }
+  }
+})();
 function getState(id){
+  // Preserve existing topic-specific progress, if any, before sharing states.
+  if(writingTopicCanonicalIds.has(id) && (!db.state[id] || db.state[id].status==='new' && !db.state[id].reviews)){
+    id=writingTopicCanonicalIds.get(id);
+  }
   if(!db.state[id]) db.state[id]={status:'new',due:0,interval:0,ease:2.5,reviews:0,lapses:0,last:0,streak:0};
   return db.state[id];
 }
